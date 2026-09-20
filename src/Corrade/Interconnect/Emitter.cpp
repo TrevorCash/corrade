@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -24,6 +24,8 @@
     DEALINGS IN THE SOFTWARE.
 */
 
+#define _CORRADE_NO_DEPRECATED_INTERCONNECT
+
 #include "Emitter.h"
 
 #include "Corrade/Interconnect/Receiver.h"
@@ -32,6 +34,7 @@
 
 namespace Corrade { namespace Interconnect {
 
+CORRADE_IGNORE_DEPRECATED_PUSH
 namespace Implementation {
 
 ConnectionData::ConnectionData(ConnectionData&& other) noexcept:
@@ -63,16 +66,20 @@ ConnectionData::~ConnectionData() {
 Emitter::Emitter(): _lastHandledSignal{0}, _connectionsChanged{false} {}
 
 Emitter::~Emitter() {
-    for(auto& connection: _connections) disconnectFromReceiver(connection.second);
+    for(auto& connection: _connections)
+        disconnectFromReceiver(connection.second);
 }
 
+CORRADE_IGNORE_DEPRECATED_PUSH
 bool Emitter::isConnected(const Connection& connection) const {
     auto range = _connections.equal_range(connection._signal);
     for(auto it = range.first; it != range.second; ++it)
-        if(&it->second == &*connection._data) return true;
+        if(&it->second == &*connection._data)
+            return true;
 
     return false;
 }
+CORRADE_IGNORE_DEPRECATED_POP
 
 Implementation::ConnectionData& Emitter::connectInternal(const Implementation::SignalData& signal, Implementation::ConnectionData&& data) {
     /* Add connection to emitter */
@@ -106,11 +113,13 @@ void Emitter::disconnectAllSignals() {
 }
 
 void Emitter::disconnectFromReceiver(const Implementation::ConnectionData& data) {
-    if(data.type != Implementation::ConnectionType::Member) return;
+    if(data.type != Implementation::ConnectionType::Member)
+        return;
 
     auto& receiverConnections = data.storage.member.receiver->_connections;
     for(auto end = receiverConnections.end(), rit = receiverConnections.begin(); rit != end; ++rit) {
-        if(&*rit->data != &data) continue;
+        if(&*rit->data != &data)
+            continue;
 
         receiverConnections.erase(rit);
         return;
@@ -123,7 +132,8 @@ void Emitter::disconnectFromReceiver(const Implementation::ConnectionData& data)
 bool disconnect(Emitter& emitter, const Connection& connection) {
     auto range = emitter._connections.equal_range(connection._signal);
     for(auto it = range.first; it != range.second; ++it) {
-        if(&it->second != &*connection._data) continue;
+        if(&it->second != &*connection._data)
+            continue;
 
         emitter.disconnectFromReceiver(it->second);
         emitter._connections.erase(it);
@@ -133,5 +143,6 @@ bool disconnect(Emitter& emitter, const Connection& connection) {
 
     return false;
 }
+CORRADE_IGNORE_DEPRECATED_POP
 
 }}

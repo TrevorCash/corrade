@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -114,7 +114,7 @@ Compared to @ref std::unique_ptr, this class does proper @cpp const @ce
 propagation as would be expected from any other owning container like
 @ref Array or @ref String --- i.e., it's only possible to mutate the owned data
 if the instance is not @cpp const @ce. There's no STL functionality with such
-behavior except for the proposed @m_class{m-doc-external} [std::indirect_value](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p1950r1.html).
+behavior except for the proposed @m_class{m-doc-external} [std::indirect_value](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p1950r1.html).
 
 Unlike @ref std::unique_ptr, this class does not provide custom deleters,
 doesn't work with arrays and doesn't have a @cpp constexpr @ce API. On the
@@ -233,7 +233,10 @@ template<class T> class Pointer {
          */
         template<class U
             #ifndef DOXYGEN_GENERATING_OUTPUT
-            , typename std::enable_if<std::is_base_of<T, U>::value, int>::type = 0
+            /* Not using std::is_base_of<T, U> as it requires T to be defined,
+               which breaks certain generic code. For more information see the
+               PointerTest::constructConvertibleButNotDerived() case. */
+            , typename std::enable_if<std::is_convertible<U*, T*>::value, int>::type = 0
             #endif
         > /*implicit*/ Pointer(Pointer<U>&& other) noexcept: _pointer{other.release()} {
             static_assert(std::is_trivially_destructible<U>::value || std::has_virtual_destructor<T>::value, "the derived type should be trivially destructible or the base type should have a virtual destructor");

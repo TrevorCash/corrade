@@ -28,7 +28,8 @@
 #   CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-cmake_minimum_required(VERSION 3.5)
+# Matches Corrade requirement, see root CMakeLists for more information.
+cmake_minimum_required(VERSION 3.5...3.10)
 
 project(CorradeExamples CXX)
 
@@ -41,7 +42,7 @@ endif()
 # level otherwise
 find_package(Corrade REQUIRED)
 
-add_subdirectory(interconnect)
+add_subdirectory(json)
 if(NOT CORRADE_PLUGINMANAGER_NO_DYNAMIC_PLUGIN_SUPPORT)
     add_subdirectory(pluginmanager)
 endif()

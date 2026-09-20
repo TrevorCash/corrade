@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -38,13 +38,13 @@ struct CppStandardTest: TestSuite::Tester {
 
 CppStandardTest::CppStandardTest() {
     #ifdef COMPILING_AS_CPP11
-    setTestName("Cpp11StandardTest");
+    setTestName("Corrade::Test::Cpp11StandardTest");
     #elif defined(COMPILING_AS_CPP14)
-    setTestName(TEST_NAME);
+    setTestName("Corrade::Test::" TEST_NAME);
     #elif defined(COMPILING_AS_CPP17)
-    setTestName("Cpp17StandardTest");
+    setTestName("Corrade::Test::Cpp17StandardTest");
     #elif defined(COMPILING_AS_CPP2A)
-    setTestName("Cpp2aStandardTest");
+    setTestName("Corrade::Test::Cpp2aStandardTest");
     #else
     #error no standard version macro passed from buildsystem
     #endif
@@ -80,7 +80,7 @@ void CppStandardTest::test() {
            or any newer. GCC 11 and Clang 16 are the first that default to
            C++17 and the standard isn't downgraded for them. */
         #if (defined(CORRADE_TARGET_GCC) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 11) || (defined(CORRADE_TARGET_CLANG) && !defined(CORRADE_TARGET_CLANG_CL) && __clang_major__ >= 16)
-        CORRADE_EXPECT_FAIL_IF(testName() == "Cpp14StandardTestCMakeFeatures",
+        CORRADE_EXPECT_FAIL_IF(testName() == "Corrade::Test::Cpp14StandardTestCMakeFeatures",
             "CMake (3.20.4) doesn't properly set -std=c++14 for GCC 11+ / Clang 16+, making it default to C++17 instead.");
         #endif
         CORRADE_COMPARE(CORRADE_CXX_STANDARD, 201402L);

@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -26,35 +26,44 @@
 
 #include "Corrade/Containers/Array.h"
 #include "Corrade/Containers/Optional.h"
+#include "Corrade/Containers/Pair.h"
 #include "Corrade/Containers/StaticArray.h"
 #include "Corrade/Containers/StringView.h"
 #include "Corrade/Containers/String.h"
 #include "Corrade/TestSuite/Tester.h"
 #include "Corrade/TestSuite/Compare/Container.h"
 #include "Corrade/TestSuite/Compare/Numeric.h"
+#include "Corrade/TestSuite/Compare/String.h"
 #include "Corrade/Utility/Algorithms.h"
-#include "Corrade/Utility/DebugStl.h" /** @todo remove when std::string is no more */
 #include "Corrade/Utility/Format.h"
 #include "Corrade/Utility/Memory.h"
+#include "Corrade/Utility/StlMath.h" /* NAN, HUGE_VAL */
 #include "Corrade/Utility/String.h"
 #include "Corrade/Utility/Test/cpuVariantHelpers.h"
 #include "Corrade/Utility/Test/StringTest.h"
+
+#ifdef CORRADE_BUILD_DEPRECATED
+#include <string>
+#include <vector>
+
+#include "Corrade/Utility/DebugStl.h"
+#endif
 
 namespace Corrade { namespace Utility { namespace Test { namespace {
 
 struct StringTest: TestSuite::Tester {
     explicit StringTest();
 
+    void debugParseState();
+    void debugParseDecimalFlag();
+    void debugParseDecimalFlags();
+    void debugParseHexadecimalFlag();
+    void debugParseHexadecimalFlags();
+    void debugParseFloatFlag();
+    void debugParseFloatFlags();
+
     void captureImplementations();
     void restoreImplementations();
-
-    void fromArray();
-    void trim();
-    void trimInPlace();
-    void split();
-    void splitMultipleCharacters();
-    void partition();
-    void join();
 
     void commonPrefix();
     void commonPrefixAligned();
@@ -70,23 +79,6 @@ struct StringTest: TestSuite::Tester {
     void lowercaseUppercaseString();
     void lowercaseUppercaseStringSmall();
     void lowercaseUppercaseStringNotOwned();
-    void lowercaseUppercaseStl();
-
-    void beginsWith();
-    void beginsWithEmpty();
-    #ifdef CORRADE_BUILD_DEPRECATED
-    void viewBeginsWith();
-    #endif
-    void endsWith();
-    void endsWithEmpty();
-    #ifdef CORRADE_BUILD_DEPRECATED
-    void viewEndsWith();
-    #endif
-
-    void stripPrefix();
-    void stripPrefixInvalid();
-    void stripSuffix();
-    void stripSuffixInvalid();
 
     void replaceFirst();
     void replaceFirstNotFound();
@@ -107,9 +99,52 @@ struct StringTest: TestSuite::Tester {
     void replaceAllInPlaceCharacterLessThanTwoVectors();
     void replaceAllInPlaceCharacterLessThanOneVector();
 
+    void parseResultConstruct();
+    void parseResultConstructCopy();
+
+    void parseDecimalUnsigned();
+    void parseDecimalUnsignedFailed();
+    void parseDecimalSigned();
+    void parseDecimalSignedFailed();
+
+    void parseHexadecimalUnsigned();
+    void parseHexadecimalUnsignedFailed();
+    void parseHexadecimalSigned();
+    void parseHexadecimalSignedFailed();
+
+    void parseFloat();
+    void parseFloatFailed();
+
+    template<class T> void parseDecimalHexadecimalUnsignedLimits();
+    template<class T> void parseDecimalHexadecimalSignedLimits();
+    void parseDecimalHexadecimalFloatNonNullTerminated();
+    void parseDecimalHexadecimalInvalid();
+
     void parseNumberSequence();
     void parseNumberSequenceOverflow();
     void parseNumberSequenceError();
+
+    #ifdef CORRADE_BUILD_DEPRECATED
+    void deprecatedFromArray();
+    void deprecatedTrim();
+    void deprecatedTrimInPlace();
+    void deprecatedSplit();
+    void deprecatedSplitMultipleCharacters();
+    void deprecatedPartition();
+    void deprecatedJoin();
+
+    void deprecatedBeginsWith();
+    void deprecatedBeginsWithEmpty();
+    void deprecatedViewBeginsWith();
+    void deprecatedEndsWith();
+    void deprecatedEndsWithEmpty();
+    void deprecatedViewEndsWith();
+
+    void deprecatedStripPrefix();
+    void deprecatedStripPrefixInvalid();
+    void deprecatedStripSuffix();
+    void deprecatedStripSuffixInvalid();
+    #endif
 
     private:
         #ifdef CORRADE_UTILITY_FORCE_CPU_POINTER_DISPATCH
@@ -195,6 +230,829 @@ const struct {
 };
 
 const struct {
+    TestSuite::TestCaseDescriptionSourceLocation name;
+    const char* string;
+    Containers::Optional<std::uint64_t> min;
+    Containers::Optional<std::uint64_t> max;
+    String::ParseState state;
+    std::uint64_t value;
+} ParseDecimalUnsignedData[]{
+    {"zero",
+        "0", {}, {},
+        String::ParseState::Success, 0},
+    {"several zeros",
+        "00000", {}, {},
+        String::ParseState::Success, 0},
+    {"zero with an explicit sign",
+        "+0", {}, {},
+        String::ParseState::Success, 0},
+    {"all digits",
+        "6532710984", {}, {},
+        String::ParseState::Success, 6532710984},
+    {"leading zeros",
+        "0000004625183", {}, {},
+        String::ParseState::Success, 4625183},
+    {"explicit sign",
+        "+420222333111", {}, {},
+        String::ParseState::Success, 420222333111},
+    {"explicit sign, leading zeros",
+        "+0000777", {}, {},
+        String::ParseState::Success, 777},
+    {"max representable value",
+        "18446744073709551615", {}, {},
+        String::ParseState::Success, ~std::uint64_t{}},
+    {"max representable value, leading zeros",
+        "000000018446744073709551615", {}, {},
+        String::ParseState::Success, ~std::uint64_t{}},
+    {"overflow in last addition",
+        "18446744073709551616", {}, {},
+        String::ParseState::Clamped, ~std::uint64_t{}},
+    {"overflow in last addition, leading zeros",
+        "000018446744073709551616", {}, {},
+        String::ParseState::Clamped, ~std::uint64_t{}},
+    {"overflow in last multiply",
+        "18446744073709551620", {}, {},
+        String::ParseState::Clamped, ~std::uint64_t{}},
+    {"overflow in last multiply, leading zeros",
+        "0018446744073709551620", {}, {},
+        String::ParseState::Clamped, ~std::uint64_t{}},
+    {"a very large value",
+        "10000000000000000000000000000000000000000000", {}, {},
+        String::ParseState::Clamped, ~std::uint64_t{}},
+    {"less than min",
+        "235", 250, 950,
+        String::ParseState::Clamped, 250},
+    {"greater than max",
+        "1003", 250, 950,
+        String::ParseState::Clamped, 950},
+};
+
+const struct {
+    TestSuite::TestCaseDescriptionSourceLocation name;
+    const char* string;
+    String::ParseDecimalFlags flags;
+    std::size_t expected;
+} ParseDecimalUnsignedFailedData[]{
+    {"empty string",
+        "", {}, 0},
+    {"null string",
+        nullptr, {}, 0},
+    {"negative sign",
+        "-33", {}, 0},
+    {"positive sign alone",
+        "+", {}, 1},
+    {"sign disallowed",
+        "+33", String::ParseDecimalFlag::DisallowSign, 0},
+    /* These two likely just pass with std::strtoull() */
+    {"trailing whitespace",
+        "12\t", {}, 2},
+    {"leading whitespace",
+        "  12", {}, 0},
+    {"whitespace in the middle",
+        "1 2", {}, 1},
+    {"non-numeric character at the front",
+        "e1342", {}, 0},
+    {"non-numeric character after a sign",
+        "+e1342", {}, 1},
+    {"non-numeric character after leading zeros",
+        "000e1342", {}, 3},
+    {"non-numeric character after a sign and leading zeros",
+        "+000e1342", {}, 4},
+    {"non-numeric character inside",
+        "134f2", {}, 3},
+    {"non-numeric character at the end",
+        "1342f", {}, 4},
+    {"non-numeric character at the end, leading zeros",
+        "0001342f", {}, 7},
+    {"non-numeric character at the end, sign",
+        "+1342f", {}, 5},
+    {"non-numeric character at the end, sign and leading zeros",
+        "+0001342f", {}, 8},
+    /* This may cause std::strtoull() to switch to hex parsing */
+    {"hexadecimal prefix",
+        "0x1337", {}, 1},
+    {"garbage at the last char of a max representable value",
+        "1844674407370955161a", {}, 19},
+    {"garbage at the last char of a max representable value, leading zeros",
+        "001844674407370955161a", {}, 21},
+    {"garbage after max representable value",
+        "18446744073709551615a", {}, 20},
+    {"garbage after max representable value, leading zeros",
+        "000018446744073709551615a", {}, 24},
+    {"garbage after a clamped value",
+        "18446744073709551700a", {}, 20},
+    {"garbage after a clamped value, leading zeros",
+        "000018446744073709551700a", {}, 24},
+    {"garbage after a very large value",
+        "10000000000000000000000000000000000000000000e", {}, 44},
+};
+
+const struct {
+    TestSuite::TestCaseDescriptionSourceLocation name;
+    const char* string;
+    Containers::Optional<std::int64_t> min;
+    Containers::Optional<std::int64_t> max;
+    String::ParseState state;
+    std::int64_t value;
+} ParseDecimalSignedData[]{
+    {"zero",
+        "0", {}, {},
+        String::ParseState::Success, 0},
+    {"several zeros",
+        "00000", {}, {},
+        String::ParseState::Success, 0},
+    {"positive zero",
+        "+0", {}, {},
+        String::ParseState::Success, 0},
+    {"negative zero",
+        "-0", {}, {},
+        String::ParseState::Success, 0},
+    {"positive",
+        "+420222333111", {}, {},
+        String::ParseState::Success, +420222333111ll},
+    {"negative",
+        "-666222333111", {}, {},
+        String::ParseState::Success, -666222333111ll},
+    {"positive, leading zeros",
+        "+0000777", {}, {},
+        String::ParseState::Success, 777},
+    {"negative, leading zeros",
+        "-000666", {}, {},
+        String::ParseState::Success, -666},
+    {"min representable value",
+        "-9223372036854775808", {}, {},
+        String::ParseState::Success, INT64_MIN},
+    {"min representable value, leading zeros",
+        "-00000009223372036854775808", {}, {},
+        String::ParseState::Success, INT64_MIN},
+    {"min representable value minus one",
+        "-9223372036854775809", {}, {},
+        String::ParseState::Clamped, INT64_MIN},
+    {"min representable value minus one, leading zeros",
+        "-00000009223372036854775809", {}, {},
+        String::ParseState::Clamped, INT64_MIN},
+    {"max representable value",
+        "9223372036854775807", {}, {},
+        String::ParseState::Success, INT64_MAX},
+    {"max representable value, leading zeros",
+        "00000009223372036854775807", {}, {},
+        String::ParseState::Success, INT64_MAX},
+    {"max representable value plus one",
+        "9223372036854775808", {}, {},
+        String::ParseState::Clamped, INT64_MAX},
+    {"max representable value plus one, leading zeros",
+        "00000009223372036854775808", {}, {},
+        String::ParseState::Clamped, INT64_MAX},
+    /* No "overflow in last addition" / "multiply" tests here, as those verify
+       the raw unsigned 64-bit parsing which is tested above already */
+    {"a very large value",
+        "10000000000000000000000000000000000000000000", {}, {},
+        String::ParseState::Clamped, INT64_MAX},
+    {"a very large negative value",
+        "-10000000000000000000000000000000000000000000", {}, {},
+        String::ParseState::Clamped, INT64_MIN},
+    {"less than positive min",
+        "235", 250, 950,
+        String::ParseState::Clamped, 250},
+    {"less than negative min",
+        "-275", -250, 950,
+        String::ParseState::Clamped, -250},
+    {"greater than positive max",
+        "1003", 250, 950,
+        String::ParseState::Clamped, 950},
+    {"greater than negative max",
+        "-115", -950, -250,
+        String::ParseState::Clamped, -250},
+};
+
+const struct {
+    TestSuite::TestCaseDescriptionSourceLocation name;
+    const char* string;
+    String::ParseDecimalFlags flags;
+    std::size_t expected;
+} ParseDecimalSignedFailedData[]{
+    {"empty string",
+        "", {}, 0},
+    {"null string",
+        nullptr, {}, 0},
+    {"positive sign alone",
+        "+", {}, 1},
+    {"negative sign alone",
+        "-", {}, 1},
+    {"positive sign disallowed",
+        "+33", String::ParseDecimalFlag::DisallowSign, 0},
+    {"negative sign disallowed",
+        "-666", String::ParseDecimalFlag::DisallowSign, 0},
+    /* These two likely just pass with std::strtoull() */
+    {"trailing whitespace",
+        "12\t", {}, 2},
+    {"leading whitespace",
+        "  12", {}, 0},
+    {"whitespace in the middle",
+        "1 2", {}, 1},
+    {"non-numeric character at the front",
+        "e1342", {}, 0},
+    {"non-numeric character after a sign",
+        "-e1342", {}, 1},
+    {"non-numeric character after leading zeros",
+        "000e1342", {}, 3},
+    {"non-numeric character after a sign and leading zeros",
+        "+000e1342", {}, 4},
+    /* No "non-numeric character inside" and "at the end" except for just one
+       as those verify the raw unsigned 64-bit parsing which is tested above
+       already */
+    {"non-numeric character at the end, sign and leading zeros",
+        "-0001342f", {}, 8},
+    /* This may cause std::strtoull() to switch to hex parsing */
+    {"hexadecimal prefix",
+        "0x1337", {}, 1},
+    /* No "garbage after max representable value" etc. tests here, as those
+       verify the raw unsigned 64-bit parsing which is tested above already */
+    {"garbage after a very large value",
+        "10000000000000000000000000000000000000000000e", {}, 44},
+};
+
+const struct {
+    TestSuite::TestCaseDescriptionSourceLocation name;
+    const char* string;
+    Containers::Optional<std::uint64_t> min;
+    Containers::Optional<std::uint64_t> max;
+    String::ParseHexadecimalFlags flags;
+    String::ParseState state;
+    std::uint64_t value;
+} ParseHexadecimalUnsignedData[]{
+    {"zero",
+        "0", {}, {}, {},
+        String::ParseState::Success, 0},
+    {"several zeros",
+        "00000", {}, {}, {},
+        String::ParseState::Success, 0},
+    {"zero with an explicit sign",
+        "+0", {}, {}, {},
+        String::ParseState::Success, 0},
+    {"all chars",
+        "6f53a27be10d9c84", {}, {}, {},
+        String::ParseState::Success, 0x6f53a27be10d9c84ull},
+    {"all chars, uppercase",
+        "6F53A27BE10D9C84", {}, {}, {},
+        String::ParseState::Success, 0x6f53a27be10d9c84ull},
+    {"mixed case",
+        "CAFE3456babe", {}, {}, {},
+        String::ParseState::Success, 0xcafe3456babeull},
+    {"leading zeros",
+        "000000462ab83", {}, {}, {},
+        String::ParseState::Success, 0x462ab83},
+    {"explicit sign",
+        "+420222eee111", {}, {}, {},
+        String::ParseState::Success, 0x420222eee111},
+    {"explicit sign, leading zeros",
+        "+00007a7", {}, {}, {},
+        String::ParseState::Success, 0x7a7},
+    {"base prefix",
+        "0xdead", {}, {}, String::ParseHexadecimalFlag::AllowBasePrefix,
+        String::ParseState::Success, 0xdead},
+    {"base prefix, explicit sign and leading zeros",
+        "+0x00dead", {}, {}, String::ParseHexadecimalFlag::AllowBasePrefix,
+        String::ParseState::Success, 0xdead},
+    {"base prefix, uppercase",
+        "0XdEaD", {}, {}, String::ParseHexadecimalFlag::AllowBasePrefix,
+        String::ParseState::Success, 0xdead},
+    {"base prefix, hash prefix allowed as well",
+        "0xdead", {}, {}, String::ParseHexadecimalFlag::AllowBasePrefix|String::ParseHexadecimalFlag::AllowHashPrefix,
+        String::ParseState::Success, 0xdead},
+    {"hash prefix",
+        "#ffcc33", {}, {}, String::ParseHexadecimalFlag::AllowHashPrefix,
+        String::ParseState::Success, 0xffcc33},
+    {"hash prefix, explicit sign and leading zeros",
+        "+#00ffcc33", {}, {}, String::ParseHexadecimalFlag::AllowHashPrefix,
+        String::ParseState::Success, 0xffcc33},
+    {"hash prefix, base prefix allowed as well",
+        "#ffcc33", {}, {}, String::ParseHexadecimalFlag::AllowBasePrefix|String::ParseHexadecimalFlag::AllowHashPrefix,
+        String::ParseState::Success, 0xffcc33},
+    {"max representable value",
+        "ffffffffffffffff", {}, {}, {},
+        String::ParseState::Success, ~std::uint64_t{}},
+    {"max representable value, leading zeros",
+        "0000000ffffffffffffffff", {}, {}, {},
+        String::ParseState::Success, ~std::uint64_t{}},
+    {"one more character that overflows",
+        "ffffffffffffffff0", {}, {}, {},
+        String::ParseState::Clamped, ~std::uint64_t{}},
+    /* This should be handled with the same check as above, just verifying that
+       it doesn't get parsed as 0 for some reason */
+    {"max representable value plus one",
+        "10000000000000000", {}, {}, {},
+        String::ParseState::Clamped, ~std::uint64_t{}},
+    {"a very large value",
+        "10000000000000000000000000000000000000000000", {}, {}, {},
+        String::ParseState::Clamped, ~std::uint64_t{}},
+    {"less than min",
+        "2a5", 0x2e0, 0x9e0, {},
+        String::ParseState::Clamped, 0x2e0},
+    {"greater than max",
+        "1bb3", 0x2e0, 0x9f0, {},
+        String::ParseState::Clamped, 0x9f0},
+};
+
+const struct {
+    TestSuite::TestCaseDescriptionSourceLocation name;
+    const char* string;
+    String::ParseHexadecimalFlags flags;
+    std::size_t expected;
+} ParseHexadecimalUnsignedFailedData[]{
+    {"empty string",
+        "", {}, 0},
+    {"null string",
+        nullptr, {}, 0},
+    {"negative sign",
+        "-3e3", {}, 0},
+    {"positive sign alone",
+        "+", {}, 1},
+    {"sign disallowed",
+        "+3e3", String::ParseHexadecimalFlag::DisallowSign, 0},
+    {"base prefix disallowed",
+        "0x3", {}, 1},
+    {"base prefix after a sign disallowed",
+        "+0x3", {}, 2},
+    {"base prefix while only hash prefix allowed",
+        "0x3", String::ParseHexadecimalFlag::AllowHashPrefix, 1},
+    {"base prefix alone",
+        "0x", String::ParseHexadecimalFlag::AllowBasePrefix, 2},
+    {"base prefix with extra zeros",
+        "000x3", String::ParseHexadecimalFlag::AllowBasePrefix, 3},
+    {"base prefix with extra Xs",
+        "0xxx3", String::ParseHexadecimalFlag::AllowBasePrefix, 2},
+    {"base prefix followed by a sign",
+        "0x+3", String::ParseHexadecimalFlag::AllowBasePrefix, 2},
+    {"hash prefix disallowed",
+        "#3", {}, 0},
+    {"hash prefix after a sign disallowed",
+        "+#3", {}, 1},
+    {"hash prefix while only base prefix allowed",
+        "#3", String::ParseHexadecimalFlag::AllowBasePrefix, 0},
+    {"hash prefix alone",
+        "#", String::ParseHexadecimalFlag::AllowHashPrefix, 1},
+    {"multiple hash prefixes",
+        "###3", String::ParseHexadecimalFlag::AllowHashPrefix, 1},
+    {"hash prefix followed by a sign",
+        "#+3", String::ParseHexadecimalFlag::AllowHashPrefix, 1},
+    {"base prefix followed by a hash prefix",
+        "0x#3", String::ParseHexadecimalFlag::AllowBasePrefix|String::ParseHexadecimalFlag::AllowHashPrefix, 2},
+    {"hash prefix followed by a base prefix",
+        "#0x3", String::ParseHexadecimalFlag::AllowBasePrefix|String::ParseHexadecimalFlag::AllowHashPrefix, 2},
+    /* These two likely just pass with std::strtoull() */
+    {"trailing whitespace",
+        "12\t", {}, 2},
+    {"leading whitespace",
+        "  12", {}, 0},
+    {"whitespace in the middle",
+        "1 2", {}, 1},
+    {"non-hex character at the front",
+        "g13a2", {}, 0},
+    {"non-hex character after a sign",
+        "+g13a2", {}, 1},
+    {"non-hex character after leading zeros",
+        "000g13a2", {}, 3},
+    {"non-hex character after a sign and leading zeros",
+        "+000g13a2", {}, 4},
+    {"non-hex character after a base prefix",
+        "0xg13a2", String::ParseHexadecimalFlag::AllowBasePrefix, 2},
+    {"non-hex character after a base prefix, a sign and leading zeros",
+        "+0x00g13a2", String::ParseHexadecimalFlag::AllowBasePrefix, 5},
+    {"non-hex character after a hash prefix",
+        "#g13a2", String::ParseHexadecimalFlag::AllowHashPrefix, 1},
+    {"non-hex character after a hash prefix, a sign and leading zeros",
+        "+#00g13a2", String::ParseHexadecimalFlag::AllowHashPrefix, 4},
+    {"non-hex character inside",
+        "13ag2", {}, 3},
+    {"non-hex character at the end",
+        "13a2g", {}, 4},
+    {"non-hex character at the end, leading zeros",
+        "00013a2g", {}, 7},
+    {"non-hex character at the end, sign",
+        "+13a2g", {}, 5},
+    {"non-hex character at the end, sign and leading zeros",
+        "+00013a2g", {}, 8},
+    {"non-hex character at the end, sign, base prefix and leading zeros",
+        "+0x00013a2g", String::ParseHexadecimalFlag::AllowBasePrefix, 10},
+    {"non-hex character at the end, sign, hash prefix and leading zeros",
+        "+#00013a2g", String::ParseHexadecimalFlag::AllowHashPrefix, 9},
+    {"garbage after max representable value",
+        "ffffffffffffffffg", {}, 16},
+    {"garbage after max representable value, leading zeros",
+        "0000ffffffffffffffffg", {}, 20},
+    {"garbage after a clamped value",
+        "10000000000000000g", {}, 17},
+    {"garbage after a clamped value, leading zeros",
+        "000010000000000000000g", {}, 21},
+    {"garbage after a very large value",
+        "10000000000000000000000000000000000000000000g", {}, 44},
+};
+
+const struct {
+    TestSuite::TestCaseDescriptionSourceLocation name;
+    const char* string;
+    Containers::Optional<std::int64_t> min;
+    Containers::Optional<std::int64_t> max;
+    String::ParseHexadecimalFlags flags;
+    String::ParseState state;
+    std::int64_t value;
+} ParseHexadecimalSignedData[]{
+    {"zero",
+        "0", {}, {}, {},
+        String::ParseState::Success, 0},
+    {"several zeros",
+        "00000", {}, {}, {},
+        String::ParseState::Success, 0},
+    {"positive zero",
+        "+0", {}, {}, {},
+        String::ParseState::Success, 0},
+    {"negative zero",
+        "-0", {}, {}, {},
+        String::ParseState::Success, 0},
+    {"positive",
+        "+420222eee111", {}, {}, {},
+        String::ParseState::Success, 0x420222eee111ll},
+    {"negative",
+        "-aaa222eee111", {}, {}, {},
+        String::ParseState::Success, -0xaaa222eee111ll},
+    {"positive, leading zeros",
+        "+00007a7", {}, {}, {},
+        String::ParseState::Success, 0x7a7},
+    {"negative, leading zeros",
+        "-0000a7a", {}, {}, {},
+        String::ParseState::Success, -0xa7a},
+    {"base prefix",
+        "0xdead", {}, {}, String::ParseHexadecimalFlag::AllowBasePrefix,
+        String::ParseState::Success, 0xdead},
+    {"base prefix, negative and leading zeros",
+        "-0x00dead", {}, {}, String::ParseHexadecimalFlag::AllowBasePrefix,
+        String::ParseState::Success, -0xdead},
+    {"base prefix, uppercase",
+        "0XdEaD", {}, {}, String::ParseHexadecimalFlag::AllowBasePrefix,
+        String::ParseState::Success, 0xdead},
+    {"base prefix, positive, hash prefix allowed as well",
+        "+0xdead", {}, {}, String::ParseHexadecimalFlag::AllowBasePrefix|String::ParseHexadecimalFlag::AllowHashPrefix,
+        String::ParseState::Success, 0xdead},
+    {"hash prefix",
+        "#ffcc33", {}, {}, String::ParseHexadecimalFlag::AllowHashPrefix,
+        String::ParseState::Success, 0xffcc33},
+    {"hash prefix, positive and leading zeros",
+        "+#00ffcc33", {}, {}, String::ParseHexadecimalFlag::AllowHashPrefix,
+        String::ParseState::Success, 0xffcc33},
+    {"hash prefix, negative, base prefix allowed as well",
+        "-#ffcc33", {}, {}, String::ParseHexadecimalFlag::AllowBasePrefix|String::ParseHexadecimalFlag::AllowHashPrefix,
+        String::ParseState::Success, -0xffcc33},
+    {"min representable value",
+        "-8000000000000000", {}, {}, {},
+        String::ParseState::Success, INT64_MIN},
+    {"min representable value, leading zeros",
+        "-0008000000000000000", {}, {}, {},
+        String::ParseState::Success, INT64_MIN},
+    {"min representable value minus one",
+        "-8000000000000001", {}, {}, {},
+        String::ParseState::Clamped, INT64_MIN},
+    {"min representable value minus one, leading zeros",
+        "-0008000000000000001", {}, {}, {},
+        String::ParseState::Clamped, INT64_MIN},
+    {"max representable value",
+        "7fffffffffffffff", {}, {}, {},
+        String::ParseState::Success, INT64_MAX},
+    {"max representable value, leading zeros",
+        "00007fffffffffffffff", {}, {}, {},
+        String::ParseState::Success, INT64_MAX},
+    {"max representable value plus one",
+        "8000000000000000", {}, {}, {},
+        String::ParseState::Clamped, INT64_MAX},
+    {"max representable value plus one, leading zeros",
+        "00008000000000000000", {}, {}, {},
+        String::ParseState::Clamped, INT64_MAX},
+    /* No "one more character that overflows" etc. tests here, as those verify
+       the raw unsigned 64-bit parsing which is tested above already */
+    {"a very large value",
+        "10000000000000000000000000000000000000000000", {}, {}, {},
+        String::ParseState::Clamped, INT64_MAX},
+    {"a very large negative value",
+        "-10000000000000000000000000000000000000000000", {}, {}, {},
+        String::ParseState::Clamped, INT64_MIN},
+    {"less than positive min",
+        "2a5", 0x2e0, 0x9e0, {},
+        String::ParseState::Clamped, 0x2e0},
+    {"less than negative min",
+        "-2d5", -0x2b0, 9e0, {},
+        String::ParseState::Clamped, -0x2b0},
+    {"greater than positive max",
+        "1bb3", 0x2e0, 0x9f0, {},
+        String::ParseState::Clamped, 0x9f0},
+    {"greater than negative max",
+        "-1e5", -0x9f0, -0x2e0, {},
+        String::ParseState::Clamped, -0x2e0},
+};
+
+const struct {
+    TestSuite::TestCaseDescriptionSourceLocation name;
+    const char* string;
+    String::ParseHexadecimalFlags flags;
+    std::size_t expected;
+} ParseHexadecimalSignedFailedData[]{
+    {"empty string",
+        "", {}, 0},
+    {"null string",
+        nullptr, {}, 0},
+    {"positive sign alone",
+        "+", {}, 1},
+    {"negative sign alone",
+        "-", {}, 1},
+    {"positive sign disallowed",
+        "+3e3", String::ParseHexadecimalFlag::DisallowSign, 0},
+    {"negative sign disallowed",
+        "-aaa", String::ParseHexadecimalFlag::DisallowSign, 0},
+    {"base prefix disallowed",
+        "0x3", {}, 1},
+    {"base prefix after a sign disallowed",
+        "-0x3", {}, 2},
+    {"base prefix while only hash prefix allowed",
+        "0x3", String::ParseHexadecimalFlag::AllowHashPrefix, 1},
+    {"base prefix alone",
+        "0x", String::ParseHexadecimalFlag::AllowBasePrefix, 2},
+    {"base prefix with extra zeros",
+        "000x3", String::ParseHexadecimalFlag::AllowBasePrefix, 3},
+    {"base prefix with extra Xs",
+        "0xxx3", String::ParseHexadecimalFlag::AllowBasePrefix, 2},
+    {"base prefix followed by a sign",
+        "0x+3", String::ParseHexadecimalFlag::AllowBasePrefix, 2},
+    {"hash prefix disallowed",
+        "#3", {}, 0},
+    {"hash prefix after a sign disallowed",
+        "-#3", {}, 1},
+    {"hash prefix while only base prefix allowed",
+        "#3", String::ParseHexadecimalFlag::AllowBasePrefix, 0},
+    {"hash prefix alone",
+        "#", String::ParseHexadecimalFlag::AllowHashPrefix, 1},
+    {"multiple hash prefixes",
+        "###3", String::ParseHexadecimalFlag::AllowHashPrefix, 1},
+    {"hash prefix followed by a sign",
+        "#-3", String::ParseHexadecimalFlag::AllowHashPrefix, 1},
+    {"base prefix followed by a hash prefix",
+        "0x#3", String::ParseHexadecimalFlag::AllowBasePrefix|String::ParseHexadecimalFlag::AllowHashPrefix, 2},
+    {"hash prefix followed by a base prefix",
+        "#0x3", String::ParseHexadecimalFlag::AllowBasePrefix|String::ParseHexadecimalFlag::AllowHashPrefix, 2},
+    /* These two likely just pass with std::strtoull() */
+    {"trailing whitespace",
+        "12\t", {}, 2},
+    {"leading whitespace",
+        "  12", {}, 0},
+    {"whitespace in the middle",
+        "1 2", {}, 1},
+    {"non-hex character at the front",
+        "g13a2", {}, 0},
+    {"non-hex character after a sign",
+        "-g13a2", {}, 1},
+    {"non-hex character after leading zeros",
+        "000g13a2", {}, 3},
+    {"non-hex character after a sign and leading zeros",
+        "-000g13a2", {}, 4},
+    {"non-hex character after a base prefix",
+        "0xg13a2", String::ParseHexadecimalFlag::AllowBasePrefix, 2},
+    {"non-hex character after a base prefix, a sign and leading zeros",
+        "+0x00g13a2", String::ParseHexadecimalFlag::AllowBasePrefix, 5},
+    {"non-hex character after a hash prefix",
+        "#g13a2", String::ParseHexadecimalFlag::AllowHashPrefix, 1},
+    {"non-hex character after a hash prefix, a sign and leading zeros",
+        "-#00g13a2", String::ParseHexadecimalFlag::AllowHashPrefix, 4},
+    /* No "non-hex character inside" and "at the end" except for just two as
+       those verify the raw unsigned 64-bit parsing which is tested above
+       already */
+    {"non-hex character at the end, sign, base prefix and leading zeros",
+        "-0x00013a2g", String::ParseHexadecimalFlag::AllowBasePrefix, 10},
+    {"non-hex character at the end, sign, hash prefix and leading zeros",
+        "+#00013a2g", String::ParseHexadecimalFlag::AllowHashPrefix, 9},
+    /* No "garbage after max representable value" etc. tests here, as those
+       verify the raw unsigned 64-bit parsing which is tested above already */
+    {"garbage after a very large value",
+        "10000000000000000000000000000000000000000000g", {}, 44},
+};
+
+/* Yeah, sure, undefined behavior and all. Do I care? No. */
+union FloatFromBits {
+    explicit FloatFromBits(std::uint32_t bits): bits{bits} {}
+    std::uint32_t bits;
+    float value;
+};
+union DoubleFromBits {
+    explicit DoubleFromBits(std::uint64_t bits): bits{bits} {}
+    std::uint64_t bits;
+    double value;
+};
+
+const struct {
+    TestSuite::TestCaseDescriptionSourceLocation name;
+    const char* string;
+    String::ParseState state;
+    float value;
+    String::ParseState stateDouble;
+    double valueDouble;
+} ParseFloatData[]{
+    {"zero", "0",
+        String::ParseState::Success, 0.0f,
+        String::ParseState::Success, 0.0},
+    {"very many zeros",
+        "000000000000000000000000000000000000000000000000000000000000"
+        "000000000000000000000000000000000000000000000000000000000000"
+        "000000000000000000000000000000000000000000000000000000000000"
+        "000000000000000000000000000000000000000000000000000000000000"
+        "000000000000000000000000000000000000000000000000000000000000"
+        "000000000000000000000000000000000000000000000000000000000000e100",
+        String::ParseState::Success, 0.0f,
+        String::ParseState::Success, 0.0},
+    {"positive zero", "+0",
+        String::ParseState::Success, 0.0f,
+        String::ParseState::Success, 0.0},
+    {"negative zero", "-0",
+        String::ParseState::Success, -0.0f,
+        String::ParseState::Success, -0.0},
+    {"negative zero with an exponent", "-0e-100",
+        String::ParseState::Success, -0.0f,
+        String::ParseState::Success, -0.0},
+    {"value", "1337.420",
+        String::ParseState::Success, 1337.420f,
+        String::ParseState::Success, 1337.420},
+    {"leading zeros", "000000000000001337.420",
+        String::ParseState::Success, 1337.420f,
+        String::ParseState::Success, 1337.420},
+    /** @todo make this fail? if yes, then disallow also +. and -. */
+    {"leading zero omitted", ".420",
+        String::ParseState::Success, 0.420f,
+        String::ParseState::Success, 0.420},
+    {"leading zero omitted, positive", "+.420",
+        String::ParseState::Success, 0.420f,
+        String::ParseState::Success, 0.420},
+    {"leading zero omitted, negative", "-.420",
+        String::ParseState::Success, -0.420f,
+        String::ParseState::Success, -0.420},
+    {"positive value", "+1337.420",
+        String::ParseState::Success, 1337.420f,
+        String::ParseState::Success, 1337.420},
+    {"negative value", "-1337.420",
+        String::ParseState::Success, -1337.420f,
+        String::ParseState::Success, -1337.420},
+    {"exponent", "1.33742e3",
+        String::ParseState::Success, 1337.420f,
+        String::ParseState::Success, 1337.420},
+    {"uppercase exponent", "1.33742E3",
+        String::ParseState::Success, 1337.420f,
+        String::ParseState::Success, 1337.420},
+    {"exponent with positive sign", "1.33742e+3",
+        String::ParseState::Success, 1337.420f,
+        String::ParseState::Success, 1337.420},
+    {"exponent with negative sign", "1337420e-3",
+        String::ParseState::Success, 1337.420f,
+        String::ParseState::Success, 1337.420},
+
+    /* Overflow to positive/negative infinity */
+    {"largest 32-bit value", "340282346638528859811704183484516925440",
+        /* https://en.wikipedia.org/wiki/Single-precision_floating-point_format */
+        String::ParseState::Success, FloatFromBits{0x7f7fffffu}.value,
+        String::ParseState::Success, 340282346638528859811704183484516925440.0},
+                      /* value changed here ---v to 6 from 4 */
+    {"largest 32-bit value plus some", "340282366638528859811704183484516925440",
+        String::ParseState::Clamped, HUGE_VALF,
+        String::ParseState::Success, 340282366638528859811704183484516925440.0},
+    {"smallest 32-bit value", "-340282346638528859811704183484516925440",
+        /* Like above, but flipping the highest sign bit */
+        String::ParseState::Success, FloatFromBits{0xff7fffffu}.value,
+        String::ParseState::Success, -340282346638528859811704183484516925440.0},
+                         /* value changed here ---v to 6 from 4 */
+    {"smallest 32-bit value minus some", "-340282366638528859811704183484516925440",
+        String::ParseState::Clamped, -HUGE_VALF,
+        String::ParseState::Success, -340282366638528859811704183484516925440.0},
+
+    {"largest 64-bit value",
+        "179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368",
+        String::ParseState::Clamped, HUGE_VALF,
+        /* https://en.wikipedia.org/wiki/Double-precision_floating-point_format */
+        String::ParseState::Success, DoubleFromBits{0x7fefffffffffffffull}.value},
+    {"largest 64-bit value plus some",
+                      /* v--- value changed here to 8 from 7 */
+        "179769313486231580814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368",
+        String::ParseState::Clamped, HUGE_VALF,
+        String::ParseState::Clamped, HUGE_VAL},
+    {"smallest 64-bit value",
+        "-179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368",
+        String::ParseState::Clamped, -HUGE_VALF,
+        /* Like above, but flipping the highest sign bit */
+        String::ParseState::Success, DoubleFromBits{0xffefffffffffffffull}.value},
+    {"smallest 64-bit value plus one",
+                       /* v--- value changed here to 8 from 7 */
+        "-179769313486231580814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368",
+        String::ParseState::Clamped, -HUGE_VALF,
+        String::ParseState::Clamped, -HUGE_VAL},
+
+    /* The string `infinity` is supported by std::strtof() as well but I don't
+       intend to claim that as being supported so don't even test for that */
+    {"infinity", "inf",
+        /* It should *not* claim that a clamp happened since that's what we
+           want to enter */
+        String::ParseState::Success, HUGE_VALF,
+        String::ParseState::Success, HUGE_VAL},
+    {"positive infinity, mixed case", "+iNF",
+        String::ParseState::Success, HUGE_VALF,
+        String::ParseState::Success, HUGE_VAL},
+    {"negative infinity, mixed case", "-Inf",
+        String::ParseState::Success, -HUGE_VALF,
+        String::ParseState::Success, -HUGE_VAL},
+    /* Positive / negative NaN is ignored for practical purposes, so comparing
+       to just NaN always */
+    {"NaN", "nan",
+        String::ParseState::Success, NAN,
+        String::ParseState::Success, double(NAN)},
+    {"negative NaN, mixed case", "-nAn",
+        String::ParseState::Success, NAN,
+        String::ParseState::Success, double(NAN)},
+};
+
+const struct {
+    TestSuite::TestCaseDescriptionSourceLocation name;
+    const char* string;
+    String::ParseFloatFlags flags;
+    std::size_t expected;
+} ParseFloatFailedData[]{
+    {"empty string",
+        "", {}, 0},
+    {"null string",
+        nullptr, {}, 0},
+    {"positive sign alone",
+        "+", {}, 1},
+    {"negative sign alone",
+        "-", {}, 1},
+    {"positive sign disallowed",
+        "+33", String::ParseFloatFlag::DisallowSign, 0},
+    {"negative sign disallowed",
+        "-666", String::ParseFloatFlag::DisallowSign, 0},
+    /* These two likely just pass with std::strtof() */
+    {"trailing whitespace",
+        "12\t", {}, 2},
+    {"leading whitespace",
+        "  12", {}, 0},
+    {"whitespace in the middle",
+        "1 2", {}, 1},
+    {"non-numeric character at the front",
+        "f13.42", {}, 0},
+    {"non-numeric character after a sign",
+        "-f13.42", {}, 1},
+    {"non-numeric character after a decimal point",
+        "13.f42", {}, 3},
+    {"non-numeric character at the end",
+        "13.42f", {}, 5},
+    {"duplicated minus sign",
+        "--13.37", {}, 1},
+    {"duplicated plus sign",
+        "++13.37", {}, 1},
+    {"plus and minus sign",
+        "+-13.37", {}, 1},
+    {"minus and plus sign",
+        "-+13.37", {}, 1},
+
+    /* I don't intend to support this weird hex representation once Corrade has
+       own float parsers so disallowing it here already. (A hex representation
+       of a float/double bit pattern is something else, supporting that makes
+       sense, but that doesn't need a complex float parser.) Checking all
+       possible variants that should fail. */
+    {"hex representation",
+        "0xfeed.beef", {}, 1},
+    {"hex representation, negative",
+        "-0xfeed.beef", {}, 2},
+    {"hex representation, positive",
+        "+0xfeed.beef", {}, 2},
+    {"hex representation, uppercase",
+        "0XFEED.BEEF", {}, 1},
+    {"hex representation, negative uppercase",
+        "-0XFEED.BEEF", {}, 2},
+    {"hex representation, positive uppercase",
+        "+0XFEED.BEEF", {}, 2},
+    {"hex representation with an exponent and spaces around",
+        /* It fails on the space already */
+        "   -0x1.bc70a3d70a3d7p+6 ", {}, 0},
+    {"hex representation with an exponent and spaces around, uppercase",
+        /* It fails on the space already */
+        "\t\b0X1.BC70A3D70A3D7P6  ", {}, 0},
+
+    /* Cases that currently fail but maybe eventually shouldn't? */
+    {"space in the middle",
+        "420 69", {}, 3},
+    {"space after a plus sign",
+        "+ 420.1337", {}, 1},
+    {"space after a minus sign",
+        "- 420.1337", {}, 1},
+    {"space before an exponent",
+        /** @todo interestingly enough here it points to the exponent, not to
+            the space after */
+        "+4.201337e +2", {}, 9},
+    {"comma as a decimal separator",
+        "13,37", {}, 2},
+};
+
+const struct {
     const char* name;
     Containers::StringView string;
     Containers::Array<std::uint32_t> expected;
@@ -264,13 +1122,13 @@ const struct {
 };
 
 StringTest::StringTest() {
-    addTests({&StringTest::fromArray,
-              &StringTest::trim,
-              &StringTest::trimInPlace,
-              &StringTest::split,
-              &StringTest::splitMultipleCharacters,
-              &StringTest::partition,
-              &StringTest::join});
+    addTests({&StringTest::debugParseState,
+              &StringTest::debugParseDecimalFlag,
+              &StringTest::debugParseDecimalFlags,
+              &StringTest::debugParseHexadecimalFlag,
+              &StringTest::debugParseHexadecimalFlags,
+              &StringTest::debugParseFloatFlag,
+              &StringTest::debugParseFloatFlags});
 
     addInstancedTests({&StringTest::commonPrefix,
                        &StringTest::commonPrefixAligned,
@@ -292,26 +1150,9 @@ StringTest::StringTest() {
 
     addTests({&StringTest::lowercaseUppercaseString,
               &StringTest::lowercaseUppercaseStringSmall,
-              &StringTest::lowercaseUppercaseStringNotOwned,
-              &StringTest::lowercaseUppercaseStl,
+              &StringTest::lowercaseUppercaseStringNotOwned});
 
-              &StringTest::beginsWith,
-              &StringTest::beginsWithEmpty,
-              #ifdef CORRADE_BUILD_DEPRECATED
-              &StringTest::viewBeginsWith,
-              #endif
-              &StringTest::endsWith,
-              &StringTest::endsWithEmpty,
-              #ifdef CORRADE_BUILD_DEPRECATED
-              &StringTest::viewEndsWith,
-              #endif
-
-              &StringTest::stripPrefix,
-              &StringTest::stripPrefixInvalid,
-              &StringTest::stripSuffix,
-              &StringTest::stripSuffixInvalid,
-
-              &StringTest::replaceFirst,
+    addTests({&StringTest::replaceFirst,
               &StringTest::replaceFirstNotFound,
               &StringTest::replaceFirstEmptySearch,
               &StringTest::replaceFirstEmptyReplace,
@@ -333,6 +1174,54 @@ StringTest::StringTest() {
         &StringTest::captureImplementations,
         &StringTest::restoreImplementations);
 
+    addTests({&StringTest::parseResultConstruct,
+              &StringTest::parseResultConstructCopy});
+
+    addInstancedTests({&StringTest::parseDecimalUnsigned},
+        Containers::arraySize(ParseDecimalUnsignedData));
+
+    addInstancedTests({&StringTest::parseDecimalUnsignedFailed},
+        Containers::arraySize(ParseDecimalUnsignedFailedData));
+
+    addInstancedTests({&StringTest::parseDecimalSigned},
+        Containers::arraySize(ParseDecimalSignedData));
+
+    addInstancedTests({&StringTest::parseDecimalSignedFailed},
+        Containers::arraySize(ParseDecimalSignedFailedData));
+
+    addInstancedTests({&StringTest::parseHexadecimalUnsigned},
+        Containers::arraySize(ParseHexadecimalUnsignedData));
+
+    addInstancedTests({&StringTest::parseHexadecimalUnsignedFailed},
+        Containers::arraySize(ParseHexadecimalUnsignedFailedData));
+
+    addInstancedTests({&StringTest::parseHexadecimalSigned},
+        Containers::arraySize(ParseHexadecimalSignedData));
+
+    addInstancedTests({&StringTest::parseHexadecimalSignedFailed},
+        Containers::arraySize(ParseHexadecimalSignedFailedData));
+
+    addInstancedTests({&StringTest::parseFloat},
+        Containers::arraySize(ParseFloatData));
+
+    addInstancedTests({&StringTest::parseFloatFailed},
+        Containers::arraySize(ParseFloatFailedData));
+
+    addTests<StringTest>({
+        &StringTest::parseDecimalHexadecimalUnsignedLimits<std::uint8_t>,
+        &StringTest::parseDecimalHexadecimalUnsignedLimits<std::uint16_t>,
+        &StringTest::parseDecimalHexadecimalUnsignedLimits<std::uint32_t>,
+        &StringTest::parseDecimalHexadecimalUnsignedLimits<std::uint64_t>});
+
+    addTests<StringTest>({
+        &StringTest::parseDecimalHexadecimalSignedLimits<std::int8_t>,
+        &StringTest::parseDecimalHexadecimalSignedLimits<std::int16_t>,
+        &StringTest::parseDecimalHexadecimalSignedLimits<std::int32_t>,
+        &StringTest::parseDecimalHexadecimalSignedLimits<std::int64_t>});
+
+    addTests({&StringTest::parseDecimalHexadecimalFloatNonNullTerminated,
+              &StringTest::parseDecimalHexadecimalInvalid});
+
     addInstancedTests({&StringTest::parseNumberSequence},
         Containers::arraySize(ParseNumberSequenceData));
 
@@ -340,9 +1229,73 @@ StringTest::StringTest() {
         Containers::arraySize(ParseNumberSequenceOverflowData));
 
     addTests({&StringTest::parseNumberSequenceError});
+
+    #ifdef CORRADE_BUILD_DEPRECATED
+    addTests({&StringTest::deprecatedFromArray,
+              &StringTest::deprecatedTrim,
+              &StringTest::deprecatedTrimInPlace,
+              &StringTest::deprecatedSplit,
+              &StringTest::deprecatedSplitMultipleCharacters,
+              &StringTest::deprecatedPartition,
+              &StringTest::deprecatedJoin,
+
+              &StringTest::deprecatedBeginsWith,
+              &StringTest::deprecatedBeginsWithEmpty,
+              &StringTest::deprecatedViewBeginsWith,
+              &StringTest::deprecatedEndsWith,
+              &StringTest::deprecatedEndsWithEmpty,
+              &StringTest::deprecatedViewEndsWith,
+
+              &StringTest::deprecatedStripPrefix,
+              &StringTest::deprecatedStripPrefixInvalid,
+              &StringTest::deprecatedStripSuffix,
+              &StringTest::deprecatedStripSuffixInvalid});
+    #endif
 }
 
 using namespace Containers::Literals;
+
+void StringTest::debugParseState() {
+    Containers::String out;
+    Debug{&out} << String::ParseState::Clamped << String::ParseState(0xef);
+    CORRADE_COMPARE(out, "Utility::String::ParseState::Clamped Utility::String::ParseState(0xef)\n");
+}
+
+void StringTest::debugParseDecimalFlag() {
+    Containers::String out;
+    Debug{&out} << String::ParseDecimalFlag::DisallowSign << String::ParseDecimalFlag(0xef);
+    CORRADE_COMPARE(out, "Utility::String::ParseDecimalFlag::DisallowSign Utility::String::ParseDecimalFlag(0xef)\n");
+}
+
+void StringTest::debugParseDecimalFlags() {
+    Containers::String out;
+    Debug{&out} << (String::ParseDecimalFlag::DisallowSign|String::ParseDecimalFlag(0xe0)) << String::ParseDecimalFlags{};
+    CORRADE_COMPARE(out, "Utility::String::ParseDecimalFlag::DisallowSign|Utility::String::ParseDecimalFlag(0xe0) Utility::String::ParseDecimalFlags{}\n");
+}
+
+void StringTest::debugParseHexadecimalFlag() {
+    Containers::String out;
+    Debug{&out} << String::ParseHexadecimalFlag::AllowHashPrefix << String::ParseHexadecimalFlag(0xef);
+    CORRADE_COMPARE(out, "Utility::String::ParseHexadecimalFlag::AllowHashPrefix Utility::String::ParseHexadecimalFlag(0xef)\n");
+}
+
+void StringTest::debugParseHexadecimalFlags() {
+    Containers::String out;
+    Debug{&out} << (String::ParseHexadecimalFlag::DisallowSign|String::ParseHexadecimalFlag::AllowBasePrefix|String::ParseHexadecimalFlag(0xe0)) << String::ParseHexadecimalFlags{};
+    CORRADE_COMPARE(out, "Utility::String::ParseHexadecimalFlag::DisallowSign|Utility::String::ParseHexadecimalFlag::AllowBasePrefix|Utility::String::ParseHexadecimalFlag(0xe0) Utility::String::ParseHexadecimalFlags{}\n");
+}
+
+void StringTest::debugParseFloatFlag() {
+    Containers::String out;
+    Debug{&out} << String::ParseFloatFlag::DisallowSign << String::ParseFloatFlag(0xef);
+    CORRADE_COMPARE(out, "Utility::String::ParseFloatFlag::DisallowSign Utility::String::ParseFloatFlag(0xef)\n");
+}
+
+void StringTest::debugParseFloatFlags() {
+    Containers::String out;
+    Debug{&out} << (String::ParseFloatFlag::DisallowSign|String::ParseFloatFlag(0xe0)) << String::ParseFloatFlags{};
+    CORRADE_COMPARE(out, "Utility::String::ParseFloatFlag::DisallowSign|Utility::String::ParseFloatFlag(0xe0) Utility::String::ParseFloatFlags{}\n");
+}
 
 void StringTest::captureImplementations() {
     #ifdef CORRADE_UTILITY_FORCE_CPU_POINTER_DISPATCH
@@ -360,272 +1313,6 @@ void StringTest::restoreImplementations() {
     String::Implementation::uppercaseInPlace = _uppercaseInPlaceImplementation;
     String::Implementation::replaceAllInPlaceCharacter = _replaceAllInPlaceCharacterImplementation;
     #endif
-}
-
-void StringTest::fromArray() {
-    CORRADE_COMPARE(String::fromArray(nullptr), "");
-    CORRADE_COMPARE(String::fromArray(nullptr, 37), "");
-
-    CORRADE_COMPARE(String::fromArray("abc\0def"), "abc");
-    CORRADE_COMPARE(String::fromArray("abc\0def", 7), std::string("abc\0def", 7));
-}
-
-void StringTest::trim() {
-    /* Spaces at the end */
-    CORRADE_COMPARE(String::ltrim("abc  "), "abc  ");
-    CORRADE_COMPARE(String::rtrim("abc  "), "abc");
-
-    /* Spaces at the beginning */
-    CORRADE_COMPARE(String::ltrim("  abc"), "abc");
-    CORRADE_COMPARE(String::rtrim("  abc"), "  abc");
-
-    /* Spaces on both beginning and end */
-    CORRADE_COMPARE(String::trim("  abc  "), "abc");
-
-    /* No spaces */
-    CORRADE_COMPARE(String::trim("abc"), "abc");
-
-    /* All spaces */
-    CORRADE_COMPARE(String::trim("\t\r\n\f\v "), "");
-
-    /* Special characters */
-    CORRADE_COMPARE(String::ltrim("oubya", "aeiyou"), "bya");
-    CORRADE_COMPARE(String::rtrim("oubya", "aeiyou"), "oub");
-    CORRADE_COMPARE(String::trim("oubya", "aeiyou"), "b");
-
-    /* Special characters as a string */
-    CORRADE_COMPARE(String::ltrim("oubya", std::string{"aeiyou"}), "bya");
-    CORRADE_COMPARE(String::rtrim("oubya", std::string{"aeiyou"}), "oub");
-    CORRADE_COMPARE(String::trim("oubya", std::string{"aeiyou"}), "b");
-}
-
-void StringTest::trimInPlace() {
-    /* Spaces at the end */
-    {
-        std::string a = "abc  ";
-        String::ltrimInPlace(a);
-        CORRADE_COMPARE(a, "abc  ");
-    } {
-        std::string a = "abc  ";
-        String::rtrimInPlace(a);
-        CORRADE_COMPARE(a, "abc");
-    }
-
-    /* Spaces at the beginning */
-    {
-        std::string a = "  abc";
-        String::ltrimInPlace(a);
-        CORRADE_COMPARE(a, "abc");
-    } {
-        std::string a = "  abc";
-        String::rtrimInPlace(a);
-        CORRADE_COMPARE(a, "  abc");
-    }
-
-    /* Spaces on both beginning and end */
-    {
-        std::string a = "  abc  ";
-        String::trimInPlace(a);
-        CORRADE_COMPARE(a, "abc");
-    }
-
-    /* No spaces */
-    {
-        std::string a = "abc";
-        String::trimInPlace(a);
-        CORRADE_COMPARE(a, "abc");
-    }
-
-    /* All spaces */
-    {
-        std::string a = "\t\r\n\f\v ";
-        String::trimInPlace(a);
-        CORRADE_COMPARE(a, "");
-    }
-
-    /* Special characters */
-    {
-        std::string a = "oubya";
-        String::ltrimInPlace(a, "aeiyou");
-        CORRADE_COMPARE(a, "bya");
-    } {
-        std::string a = "oubya";
-        String::rtrimInPlace(a, "aeiyou");
-        CORRADE_COMPARE(a, "oub");
-    } {
-        std::string a = "oubya";
-        String::trimInPlace(a, "aeiyou");
-        CORRADE_COMPARE(a, "b");
-    }
-
-    /* Special characters as a string */
-    {
-        std::string a = "oubya";
-        String::ltrimInPlace(a, std::string{"aeiyou"});
-        CORRADE_COMPARE(a, "bya");
-    } {
-        std::string a = "oubya";
-        String::rtrimInPlace(a, std::string{"aeiyou"});
-        CORRADE_COMPARE(a, "oub");
-    } {
-        std::string a = "oubya";
-        String::trimInPlace(a, std::string{"aeiyou"});
-        CORRADE_COMPARE(a, "b");
-    }
-}
-
-void StringTest::split() {
-    /* These delegate into the StringView implementation and the tests are
-       kept just for archival purposes, until the whole thing is deprecated.
-       The explicit cast to avoid an ambiguous overload is kinda nasty, but
-       since this is eventually getting deprecated, I don't care anymore. */
-
-    /* Empty */
-    CORRADE_COMPARE_AS(String::split(std::string{}, '/'),
-        std::vector<std::string>{}, TestSuite::Compare::Container);
-    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{}, '/'),
-        std::vector<std::string>{}, TestSuite::Compare::Container);
-
-    /* Only delimiter */
-    CORRADE_COMPARE_AS(String::split(std::string{"/"}, '/'),
-        (std::vector<std::string>{"", ""}), TestSuite::Compare::Container);
-    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{"/"}, '/'),
-        std::vector<std::string>{}, TestSuite::Compare::Container);
-
-    /* No delimiters */
-    CORRADE_COMPARE_AS(String::split(std::string{"abcdef"}, '/'),
-        std::vector<std::string>{"abcdef"}, TestSuite::Compare::Container);
-    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{"abcdef"}, '/'),
-        std::vector<std::string>{"abcdef"}, TestSuite::Compare::Container);
-
-    /* Common case */
-    CORRADE_COMPARE_AS(String::split(std::string{"ab/c/def"}, '/'),
-        (std::vector<std::string>{"ab", "c", "def"}), TestSuite::Compare::Container);
-    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{"ab/c/def"}, '/'),
-        (std::vector<std::string>{"ab", "c", "def"}), TestSuite::Compare::Container);
-
-    /* Empty parts */
-    CORRADE_COMPARE_AS(String::split(std::string{"ab//c/def//"}, '/'),
-        (std::vector<std::string>{"ab", "", "c", "def", "", ""}), TestSuite::Compare::Container);
-    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{"ab//c/def//"}, '/'),
-        (std::vector<std::string>{"ab", "c", "def"}), TestSuite::Compare::Container);
-}
-
-void StringTest::splitMultipleCharacters() {
-    /* These delegate into the StringView implementation and the tests are
-       kept just for archival purposes, until the whole thing is deprecated.
-       The explicit cast to avoid an ambiguous overload is kinda nasty, but
-       since this is eventually getting deprecated, I don't care anymore. */
-
-    const char delimiters[] = ".:;";
-
-    /* Empty */
-    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{}, delimiters),
-        std::vector<std::string>{}, TestSuite::Compare::Container);
-
-    /* Only delimiters */
-    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{".::;"}, delimiters),
-        std::vector<std::string>{}, TestSuite::Compare::Container);
-
-    /* No delimiters */
-    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{"abcdef"}, delimiters),
-        std::vector<std::string>{"abcdef"}, TestSuite::Compare::Container);
-
-    /* Common case */
-    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{"ab:c;def"}, delimiters),
-        (std::vector<std::string>{"ab", "c", "def"}), TestSuite::Compare::Container);
-
-    /* Empty parts */
-    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{"ab:c;;def."}, delimiters),
-        (std::vector<std::string>{"ab", "c", "def"}), TestSuite::Compare::Container);
-
-    /* Whitespace */
-    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{"ab c  \t \ndef\r"}),
-        (std::vector<std::string>{"ab", "c", "def"}), TestSuite::Compare::Container);
-}
-
-void StringTest::partition() {
-    /* Happy case */
-    CORRADE_COMPARE_AS(String::partition("ab=c", '='),
-        (Containers::StaticArray<3, std::string>{"ab", "=", "c"}),
-        TestSuite::Compare::Container);
-    CORRADE_COMPARE_AS(String::rpartition("ab=c", '='),
-        (Containers::StaticArray<3, std::string>{"ab", "=", "c"}),
-        TestSuite::Compare::Container);
-
-    /* Two occurrences */
-    CORRADE_COMPARE_AS(String::partition("ab=c=d", '='),
-        (Containers::StaticArray<3, std::string>{"ab", "=", "c=d"}),
-        TestSuite::Compare::Container);
-    CORRADE_COMPARE_AS(String::rpartition("ab=c=d", '='),
-        (Containers::StaticArray<3, std::string>{"ab=c", "=", "d"}),
-        TestSuite::Compare::Container);
-
-    /* Not found */
-    CORRADE_COMPARE_AS(String::partition("abc", '='),
-        (Containers::StaticArray<3, std::string>{"abc", "", ""}),
-        TestSuite::Compare::Container);
-    CORRADE_COMPARE_AS(String::rpartition("abc", '='),
-        (Containers::StaticArray<3, std::string>{"", "", "abc"}),
-        TestSuite::Compare::Container);
-
-    /* Empty input */
-    CORRADE_COMPARE_AS(String::partition("", '='),
-        (Containers::StaticArray<3, std::string>{"", "", ""}),
-        TestSuite::Compare::Container);
-    CORRADE_COMPARE_AS(String::rpartition("", '='),
-        (Containers::StaticArray<3, std::string>{"", "", ""}),
-        TestSuite::Compare::Container);
-
-    /* More characters */
-    CORRADE_COMPARE_AS(String::partition("ab, c, d", ", "),
-        (Containers::StaticArray<3, std::string>{"ab", ", ", "c, d"}),
-        TestSuite::Compare::Container);
-    CORRADE_COMPARE_AS(String::rpartition("ab, c, d", ", "),
-        (Containers::StaticArray<3, std::string>{"ab, c", ", ", "d"}),
-        TestSuite::Compare::Container);
-}
-
-void StringTest::join() {
-    /* Empty */
-    CORRADE_COMPARE(String::join({}, '/'), "");
-    CORRADE_COMPARE(String::joinWithoutEmptyParts({}, '/'), "");
-
-    /* One empty value */
-    CORRADE_COMPARE(String::join({""}, '/'), "");
-    CORRADE_COMPARE(String::joinWithoutEmptyParts({""}, '/'), "");
-
-    /* Two empty values */
-    CORRADE_COMPARE(String::join({"", ""}, '/'),
-        "/");
-    CORRADE_COMPARE(String::joinWithoutEmptyParts({"", ""}, '/'),
-        "");
-
-    /* One value */
-    CORRADE_COMPARE(String::join({"abcdef"}, '/'),
-        "abcdef");
-    CORRADE_COMPARE(String::joinWithoutEmptyParts({"abcdef"}, '/'),
-        "abcdef");
-
-    /* Common case, also multi-character and std::string joiner */
-    CORRADE_COMPARE(String::join({"ab", "c", "def"}, '/'),
-        "ab/c/def");
-    CORRADE_COMPARE(String::join({"ab", "c", "def"}, ", "),
-        "ab, c, def");
-    CORRADE_COMPARE(String::join({"ab", "c", "def"}, std::string{", "}),
-        "ab, c, def");
-    CORRADE_COMPARE(String::joinWithoutEmptyParts({"ab", "c", "def"}, '/'),
-        "ab/c/def");
-    CORRADE_COMPARE(String::joinWithoutEmptyParts({"ab", "c", "def"}, ", "),
-        "ab, c, def");
-    CORRADE_COMPARE(String::joinWithoutEmptyParts({"ab", "c", "def"}, std::string{", "}),
-        "ab, c, def");
-
-    /* Empty parts */
-    CORRADE_COMPARE(String::join({"ab", "", "c", "def", "", ""}, '/'),
-        "ab//c/def//");
-    CORRADE_COMPARE(String::joinWithoutEmptyParts({"ab", "", "c", "def", "", ""}, '/'),
-        "ab/c/def");
 }
 
 void StringTest::commonPrefix() {
@@ -1604,131 +2291,6 @@ void StringTest::lowercaseUppercaseStringNotOwned() {
     }
 }
 
-void StringTest::lowercaseUppercaseStl() {
-    /* These just call into the in-place implementations tested above, so
-       verify just basic functionality */
-    CORRADE_COMPARE(String::lowercase(std::string{"YEAh!"}), "yeah!");
-    CORRADE_COMPARE(String::uppercase(std::string{"Hello!"}), "HELLO!");
-}
-
-void StringTest::beginsWith() {
-    /* These delegate into the StringView implementation and the tests are
-       kept just for archival purposes, until the whole thing is deprecated. */
-
-    CORRADE_VERIFY(String::beginsWith("overcomplicated", "over"));
-    CORRADE_VERIFY(String::beginsWith("overcomplicated", std::string{"over"}));
-
-    CORRADE_VERIFY(!String::beginsWith("overcomplicated", "oven"));
-    CORRADE_VERIFY(!String::beginsWith("overcomplicated", std::string{"oven"}));
-
-    CORRADE_VERIFY(String::beginsWith("hello", 'h'));
-    CORRADE_VERIFY(!String::beginsWith("hello", 'o'));
-    CORRADE_VERIFY(!String::beginsWith("", 'h'));
-}
-
-void StringTest::beginsWithEmpty() {
-    /* These delegate into the StringView implementation and the tests are
-       kept just for archival purposes, until the whole thing is deprecated. */
-
-    CORRADE_VERIFY(!String::beginsWith("", "overcomplicated"));
-    CORRADE_VERIFY(String::beginsWith("overcomplicated", ""));
-    CORRADE_VERIFY(String::beginsWith("", ""));
-}
-
-#ifdef CORRADE_BUILD_DEPRECATED
-void StringTest::viewBeginsWith() {
-    /* These delegate into the StringView implementation and the tests are
-       kept just for archival purposes, until the whole thing is deprecated. */
-
-    CORRADE_IGNORE_DEPRECATED_PUSH
-    CORRADE_VERIFY(String::viewBeginsWith("overcomplicated", "over"));
-    CORRADE_VERIFY(!String::viewBeginsWith("overcomplicated", "oven"));
-
-    CORRADE_VERIFY(String::viewBeginsWith("hello", 'h'));
-    CORRADE_VERIFY(!String::viewBeginsWith("hello", 'o'));
-    CORRADE_VERIFY(!String::viewBeginsWith("", 'h'));
-    CORRADE_IGNORE_DEPRECATED_POP
-}
-#endif
-
-void StringTest::endsWith() {
-    /* These delegate into the StringView implementation and the tests are
-       kept just for archival purposes, until the whole thing is deprecated. */
-
-    CORRADE_VERIFY(String::endsWith("overcomplicated", "complicated"));
-    CORRADE_VERIFY(String::endsWith("overcomplicated", std::string{"complicated"}));
-
-    CORRADE_VERIFY(!String::endsWith("overcomplicated", "somplicated"));
-    CORRADE_VERIFY(!String::endsWith("overcomplicated", std::string{"somplicated"}));
-
-    CORRADE_VERIFY(!String::endsWith("overcomplicated", "overcomplicated even more"));
-
-    CORRADE_VERIFY(!String::endsWith("hello", 'h'));
-    CORRADE_VERIFY(String::endsWith("hello", 'o'));
-    CORRADE_VERIFY(!String::endsWith("", 'h'));
-}
-
-void StringTest::endsWithEmpty() {
-    /* These delegate into the StringView implementation and the tests are
-       kept just for archival purposes, until the whole thing is deprecated. */
-
-    CORRADE_VERIFY(!String::endsWith("", "overcomplicated"));
-    CORRADE_VERIFY(String::endsWith("overcomplicated", ""));
-    CORRADE_VERIFY(String::endsWith("", ""));
-}
-
-#ifdef CORRADE_BUILD_DEPRECATED
-void StringTest::viewEndsWith() {
-    /* These delegate into the StringView implementation and the tests are
-       kept just for archival purposes, until the whole thing is deprecated. */
-
-    CORRADE_IGNORE_DEPRECATED_PUSH
-    CORRADE_VERIFY(String::viewEndsWith({"overcomplicated", 15}, "complicated"));
-    CORRADE_VERIFY(!String::viewEndsWith("overcomplicated", "complicated"));
-
-    CORRADE_VERIFY(!String::viewEndsWith({"overcomplicated", 15}, "somplicated"));
-    CORRADE_VERIFY(!String::viewEndsWith({"overcomplicated", 15}, "overcomplicated even more"));
-
-    CORRADE_VERIFY(!String::viewEndsWith({"hello", 5}, 'h'));
-    CORRADE_VERIFY(String::viewEndsWith({"hello", 5}, 'o'));
-    CORRADE_VERIFY(!String::viewEndsWith("hello", 'o'));
-    CORRADE_VERIFY(!String::viewEndsWith("", 'h'));
-    CORRADE_IGNORE_DEPRECATED_POP
-}
-#endif
-
-void StringTest::stripPrefix() {
-    CORRADE_COMPARE(String::stripPrefix("overcomplicated", "over"), "complicated");
-    CORRADE_COMPARE(String::stripPrefix("overcomplicated", std::string{"over"}), "complicated");
-    CORRADE_COMPARE(String::stripPrefix("overcomplicated", 'o'), "vercomplicated");
-    CORRADE_COMPARE(String::stripPrefix("overcomplicated", ""), "overcomplicated");
-}
-
-void StringTest::stripPrefixInvalid() {
-    CORRADE_SKIP_IF_NO_ASSERT();
-
-    Containers::String out;
-    Error redirectOutput{&out};
-    String::stripPrefix("overcomplicated", "complicated");
-    CORRADE_COMPARE(out, "Utility::String::stripPrefix(): string doesn't begin with given prefix\n");
-}
-
-void StringTest::stripSuffix() {
-    CORRADE_COMPARE(String::stripSuffix("overcomplicated", "complicated"), "over");
-    CORRADE_COMPARE(String::stripSuffix("overcomplicated", std::string{"complicated"}), "over");
-    CORRADE_COMPARE(String::stripSuffix("overcomplicated", 'd'), "overcomplicate");
-    CORRADE_COMPARE(String::stripSuffix("overcomplicated", ""), "overcomplicated");
-}
-
-void StringTest::stripSuffixInvalid() {
-    CORRADE_SKIP_IF_NO_ASSERT();
-
-    Containers::String out;
-    Error redirectOutput{&out};
-    String::stripSuffix("overcomplicated", "over");
-    CORRADE_COMPARE(out, "Utility::String::stripSuffix(): string doesn't end with given suffix\n");
-}
-
 void StringTest::replaceFirst() {
     CORRADE_COMPARE(String::replaceFirst(
         "this part will get replaced and this will get not",
@@ -2039,6 +2601,408 @@ void StringTest::replaceAllInPlaceCharacterLessThanOneVector() {
     CORRADE_COMPARE(string, ("H-e-ll-o-w-or-ld!"_s*count).prefix(string.size()));
 }
 
+void StringTest::parseResultConstruct() {
+    String::ParseResult a = {String::ParseState::Clamped, 1337};
+    String::ParseResult b = String::ParseState::Success;
+    CORRADE_COMPARE(a.state(), String::ParseState::Clamped);
+    CORRADE_COMPARE(b.state(), String::ParseState::Success);
+    /* Implicit conversion */
+    CORRADE_COMPARE(a, String::ParseState::Clamped);
+    CORRADE_COMPARE(b, String::ParseState::Success);
+    CORRADE_COMPARE(a.index(), 1337);
+    CORRADE_COMPARE(b.index(), 0);
+}
+
+void StringTest::parseResultConstructCopy() {
+    String::ParseResult a{String::ParseState::Clamped, 1337};
+    CORRADE_COMPARE(a.state(), String::ParseState::Clamped);
+    CORRADE_COMPARE(a.index(), 1337);
+
+    String::ParseResult b = a;
+    CORRADE_COMPARE(b.state(), String::ParseState::Clamped);
+    CORRADE_COMPARE(b.index(), 1337);
+
+    String::ParseResult c{String::ParseState::Success};
+    c = b;
+    CORRADE_COMPARE(c.state(), String::ParseState::Clamped);
+    CORRADE_COMPARE(c.index(), 1337);
+
+    CORRADE_VERIFY(std::is_copy_constructible<String::ParseResult>::value);
+    CORRADE_VERIFY(std::is_copy_assignable<String::ParseResult>::value);
+    #ifndef CORRADE_NO_STD_IS_TRIVIALLY_TRAITS
+    CORRADE_VERIFY(std::is_trivially_copy_constructible<String::ParseResult>::value);
+    CORRADE_VERIFY(std::is_trivially_copy_assignable<String::ParseResult>::value);
+    #endif
+    CORRADE_VERIFY(std::is_nothrow_copy_constructible<String::ParseResult>::value);
+    CORRADE_VERIFY(std::is_nothrow_copy_assignable<String::ParseResult>::value);
+}
+
+void StringTest::parseDecimalUnsigned() {
+    auto&& data = ParseDecimalUnsignedData[testCaseInstanceId()];
+    setTestCaseDescription(data.name);
+
+    std::uint64_t value;
+    String::ParseResult result = data.min ?
+        String::parseDecimal(data.string, value, *data.min, *data.max) :
+        String::parseDecimal(data.string, value);
+    CORRADE_COMPARE(Containers::pair(result.state(), result.index()), Containers::pair(data.state, std::size_t{}));
+    CORRADE_COMPARE(value, data.value);
+}
+
+void StringTest::parseDecimalUnsignedFailed() {
+    auto&& data = ParseDecimalUnsignedFailedData[testCaseInstanceId()];
+    setTestCaseDescription(data.name);
+
+    std::uint64_t value;
+    String::ParseResult result = String::parseDecimal(data.string, value, data.flags);
+    CORRADE_COMPARE(Containers::pair(result.state(), result.index()), Containers::pair(String::ParseState::Failed, data.expected));
+
+    /* The failure index should point either to string end or to a non-numeric
+       character inside, numeric characters can never be a failure */
+    CORRADE_VERIFY(result.index() <= Containers::StringView{data.string}.size());
+    if(data.string) {
+        CORRADE_ITERATION(data.string);
+        CORRADE_FAIL_IF(
+            result.index() != Containers::StringView{data.string}.size() &&
+            (data.string[result.index()] >= '0' && data.string[result.index()] <= '9'),
+            "Failure points to an unexpected character" << (Containers::StringView{data.string + result.index(), 1}) << "at index" << result.index());
+    }
+}
+
+void StringTest::parseDecimalSigned() {
+    auto&& data = ParseDecimalSignedData[testCaseInstanceId()];
+    setTestCaseDescription(data.name);
+
+    std::int64_t value;
+    String::ParseResult result = data.min ?
+        String::parseDecimal(data.string, value, *data.min, *data.max) :
+        String::parseDecimal(data.string, value);
+    CORRADE_COMPARE(Containers::pair(result.state(), result.index()), Containers::pair(data.state, std::size_t{}));
+    CORRADE_COMPARE(value, data.value);
+}
+
+void StringTest::parseDecimalSignedFailed() {
+    auto&& data = ParseDecimalSignedFailedData[testCaseInstanceId()];
+    setTestCaseDescription(data.name);
+
+    std::int64_t value;
+    String::ParseResult result = String::parseDecimal(data.string, value, data.flags);
+    CORRADE_COMPARE(Containers::pair(result.state(), result.index()), Containers::pair(String::ParseState::Failed, data.expected));
+
+    /* The failure index should point either to string end or to a non-numeric
+       character inside, numeric characters can never be a failure */
+    CORRADE_VERIFY(result.index() <= Containers::StringView{data.string}.size());
+    if(data.string) {
+        CORRADE_ITERATION(data.string);
+        CORRADE_FAIL_IF(
+            result.index() != Containers::StringView{data.string}.size() &&
+            (data.string[result.index()] >= '0' && data.string[result.index()] <= '9'),
+            "Failure points to an unexpected character" << (Containers::StringView{data.string + result.index(), 1}) << "at index" << result.index());
+    }
+}
+
+void StringTest::parseHexadecimalUnsigned() {
+    auto&& data = ParseHexadecimalUnsignedData[testCaseInstanceId()];
+    setTestCaseDescription(data.name);
+
+    std::uint64_t value;
+    String::ParseResult result = data.min ?
+        String::parseHexadecimal(data.string, value, *data.min, *data.max, data.flags) :
+        String::parseHexadecimal(data.string, value, data.flags);
+    CORRADE_COMPARE(Containers::pair(result.state(), result.index()), Containers::pair(data.state, std::size_t{}));
+    CORRADE_COMPARE(value, data.value);
+}
+
+void StringTest::parseHexadecimalUnsignedFailed() {
+    auto&& data = ParseHexadecimalUnsignedFailedData[testCaseInstanceId()];
+    setTestCaseDescription(data.name);
+
+    std::uint64_t value;
+    String::ParseResult result = String::parseHexadecimal(data.string, value, data.flags);
+    CORRADE_COMPARE(Containers::pair(result.state(), result.index()), Containers::pair(String::ParseState::Failed, data.expected));
+
+    /* The failure index should point either to string end or to a non-hex
+       character inside, hex characters can never be a failure */
+    CORRADE_VERIFY(result.index() <= Containers::StringView{data.string}.size());
+    if(data.string) {
+        CORRADE_ITERATION(data.string);
+        CORRADE_FAIL_IF(
+            result.index() != Containers::StringView{data.string}.size() &&
+            ((data.string[result.index()] >= '0' && data.string[result.index()] <= '9') ||
+            (data.string[result.index()] >= 'a' && data.string[result.index()] <= 'f') ||
+            (data.string[result.index()] >= 'A' && data.string[result.index()] <= 'F')),
+            "Failure points to an unexpected character" << (Containers::StringView{data.string + result.index(), 1}) << "at index" << result.index());
+    }
+}
+
+void StringTest::parseHexadecimalSigned() {
+    auto&& data = ParseHexadecimalSignedData[testCaseInstanceId()];
+    setTestCaseDescription(data.name);
+
+    std::int64_t value;
+    String::ParseResult result = data.min ?
+        String::parseHexadecimal(data.string, value, *data.min, *data.max, data.flags) :
+        String::parseHexadecimal(data.string, value, data.flags);
+    CORRADE_COMPARE(Containers::pair(result.state(), result.index()), Containers::pair(data.state, std::size_t{}));
+    CORRADE_COMPARE(value, data.value);
+}
+
+void StringTest::parseHexadecimalSignedFailed() {
+    auto&& data = ParseHexadecimalSignedFailedData[testCaseInstanceId()];
+    setTestCaseDescription(data.name);
+
+    std::int64_t value;
+    String::ParseResult result = String::parseHexadecimal(data.string, value, data.flags);
+    CORRADE_COMPARE(Containers::pair(result.state(), result.index()), Containers::pair(String::ParseState::Failed, data.expected));
+
+    /* The failure index should point either to string end or to a non-hex
+       character inside, hex characters can never be a failure */
+    CORRADE_VERIFY(result.index() <= Containers::StringView{data.string}.size());
+    if(data.string) {
+        CORRADE_ITERATION(data.string);
+        CORRADE_FAIL_IF(
+            result.index() != Containers::StringView{data.string}.size() &&
+            ((data.string[result.index()] >= '0' && data.string[result.index()] <= '9') ||
+            (data.string[result.index()] >= 'a' && data.string[result.index()] <= 'f') ||
+            (data.string[result.index()] >= 'A' && data.string[result.index()] <= 'F')),
+            "Failure points to an unexpected character" << (Containers::StringView{data.string + result.index(), 1}) << "at index" << result.index());
+    }
+}
+
+void StringTest::parseFloat() {
+    auto&& data = ParseFloatData[testCaseInstanceId()];
+    setTestCaseDescription(data.name);
+
+    float value;
+    double valueDouble;
+    String::ParseResult result = String::parseFloat(data.string, value);
+    String::ParseResult resultDouble = String::parseFloat(data.string, valueDouble);
+    {
+        #if defined(__GLIBC__) && __GLIBC__*1000 + __GLIBC_MINOR__ < 2028
+        /* https://github.com/bminor/glibc/commit/fcd6b5ac36a49e83e27e9186ded04329d3b0b0d9,
+           or so I think. The 32-bit Clamped cases are picked to be the
+           smallest possible single-digit change triggering it, they work on
+           2.42, on MSVC and on Emscripten as well. Only large 64-bit values
+           get detected correctly. */
+        CORRADE_EXPECT_FAIL_IF(data.state == String::ParseState::Clamped && Containers::StringView{data.name}.contains("32-bit"),
+            "glibc before version 2.28 has an off-by-one error in overflow detection and doesn't set the errno correctly");
+        #endif
+        CORRADE_COMPARE(Containers::pair(result.state(), result.index()), Containers::pair(data.state, std::size_t{}));
+    } {
+        #if defined(__GLIBC__) && __GLIBC__*1000 + __GLIBC_MINOR__ < 2028
+        /* Similar to above, here it fails to produce Clamped in all cases
+           where a 64-bit value is meant to overflow */
+        CORRADE_EXPECT_FAIL_IF(data.stateDouble == String::ParseState::Clamped,
+            "glibc before version 2.28 has an off-by-one error in overflow detection and doesn't set the errno correctly");
+        #endif
+        CORRADE_COMPARE(Containers::pair(resultDouble.state(), resultDouble.index()), Containers::pair(data.stateDouble, std::size_t{}));
+    }
+    CORRADE_COMPARE(value, data.value);
+    CORRADE_COMPARE(valueDouble, data.valueDouble);
+}
+
+void StringTest::parseFloatFailed() {
+    auto&& data = ParseFloatFailedData[testCaseInstanceId()];
+    setTestCaseDescription(data.name);
+
+    float value;
+    double valueDouble;
+    String::ParseResult result = String::parseFloat(data.string, value, data.flags);
+    String::ParseResult resultDouble = String::parseFloat(data.string, valueDouble, data.flags);
+    CORRADE_COMPARE(Containers::pair(result.state(), result.index()), Containers::pair(String::ParseState::Failed, data.expected));
+    CORRADE_COMPARE(Containers::pair(resultDouble.state(), resultDouble.index()), Containers::pair(String::ParseState::Failed, data.expected));
+
+    /* The failure index should point either to string end or to a non-numeric,
+       non-exponent or non-decimal-point character inside, those can never be a
+       failure */
+    CORRADE_VERIFY(result.index() <= Containers::StringView{data.string}.size());
+    if(data.string) {
+        CORRADE_ITERATION(data.string);
+        CORRADE_FAIL_IF(
+            result.index() != Containers::StringView{data.string}.size() &&
+            ((data.string[result.index()] >= '0' && data.string[result.index()] <= '9') ||
+             /** @todo strtof() points to the `e` / `E` if there's a space
+                 after, so that's currently accepted, update once we have saner
+                 parsing */
+             data.string[result.index()] == '.'),
+            "Failure points to an unexpected character" << (Containers::StringView{data.string + result.index(), 1}) << "at index" << result.index());
+    }
+}
+
+template<class T> struct ParseLimitsTraits;
+template<> struct ParseLimitsTraits<std::uint8_t> {
+    static const char* name() { return "std::uint8_t"; }
+};
+template<> struct ParseLimitsTraits<std::int8_t> {
+    static const char* name() { return "std::int8_t"; }
+};
+template<> struct ParseLimitsTraits<std::uint16_t> {
+    static const char* name() { return "std::uint16_t"; }
+};
+template<> struct ParseLimitsTraits<std::int16_t> {
+    static const char* name() { return "std::int16_t"; }
+};
+template<> struct ParseLimitsTraits<std::uint32_t> {
+    static const char* name() { return "std::uint32_t"; }
+};
+template<> struct ParseLimitsTraits<std::int32_t> {
+    static const char* name() { return "std::int32_t"; }
+};
+template<> struct ParseLimitsTraits<std::uint64_t> {
+    static const char* name() { return "std::uint64_t"; }
+};
+template<> struct ParseLimitsTraits<std::int64_t> {
+    static const char* name() { return "std::int64_t"; }
+};
+
+template<class T> void StringTest::parseDecimalHexadecimalUnsignedLimits() {
+    setTestCaseTemplateName(ParseLimitsTraits<T>::name());
+
+    /* The cast should produce a max representable value for given bit width */
+    const T value = T(~std::uint64_t{});
+    Containers::String string = Utility::format("{}", value);
+    Containers::String hexString = Utility::format("{:x}", value);
+
+    /* Parsing exactly the limit succeeds */
+    T actual;
+    CORRADE_COMPARE(String::parseDecimal(string, actual), String::ParseState::Success);
+    CORRADE_COMPARE(actual, value);
+    CORRADE_COMPARE(String::parseHexadecimal(hexString, actual), String::ParseState::Success);
+    CORRADE_COMPARE(actual, value);
+
+    /* Verify that flags are propagated correctly in all overloads */
+    CORRADE_COMPARE(String::parseDecimal("+" + string, actual), String::ParseState::Success);
+    CORRADE_COMPARE(actual, value);
+    CORRADE_COMPARE(String::parseHexadecimal("+" + hexString, actual), String::ParseState::Success);
+    CORRADE_COMPARE(actual, value);
+    CORRADE_COMPARE(String::parseDecimal("+" + string, actual, String::ParseDecimalFlag::DisallowSign), String::ParseState::Failed);
+    CORRADE_COMPARE(String::parseHexadecimal("+" + hexString, actual, String::ParseHexadecimalFlag::DisallowSign), String::ParseState::Failed);
+
+    /* A value larger than the limit clamps to the limit. For decimal strings,
+       the last character is always a number less than 9, so incrementing it by
+       one works. For hexadecimal strings, the value is something like ffffffff
+       so it has to be about prepending 1 and replacing all fs with 0s. */
+    string.back() += 1;
+    hexString = "1" + hexString;
+    String::replaceAllInPlace(hexString, 'f', '0');
+    CORRADE_COMPARE(String::parseDecimal(string, actual), String::ParseState::Clamped);
+    CORRADE_COMPARE(actual, value);
+    CORRADE_COMPARE(String::parseHexadecimal(hexString, actual), String::ParseState::Clamped);
+    CORRADE_COMPARE(actual, value);
+}
+
+template<class T> void StringTest::parseDecimalHexadecimalSignedLimits() {
+    setTestCaseTemplateName(ParseLimitsTraits<T>::name());
+
+    /* These should produce a min and max representable value for given bit
+       width */
+    const T min = T(1ull << (sizeof(T)*8 - 1));
+    const T max = T((1ull << (sizeof(T)*8 - 1)) - 1);
+    CORRADE_VERIFY(min < 0 && max > 0);
+    Containers::String minString = Utility::format("{}", min);
+    /* Printing negative hexadecimal numbers is impossible with the STL */
+    /** @todo clean up once we have our own printing routine as well, FFS */
+    Containers::String minHexString = Utility::format("-{:x}", std::uint64_t(max) + 1);
+    Containers::String maxString = Utility::format("{}", max);
+    Containers::String maxHexString = Utility::format("{:x}", max);
+
+    /* Parsing exactly the limit succeeds */
+    T actual;
+    CORRADE_COMPARE(String::parseDecimal(minString, actual), String::ParseState::Success);
+    CORRADE_COMPARE(actual, min);
+    CORRADE_COMPARE(String::parseHexadecimal(minHexString, actual), String::ParseState::Success);
+    CORRADE_COMPARE(actual, min);
+    CORRADE_COMPARE(String::parseDecimal(maxString, actual), String::ParseState::Success);
+    CORRADE_COMPARE(actual, max);
+    CORRADE_COMPARE(String::parseHexadecimal(maxHexString, actual), String::ParseState::Success);
+    CORRADE_COMPARE(actual, max);
+
+    /* Verify that flags are propagated correctly in all overloads */
+    CORRADE_COMPARE(String::parseDecimal(minString, actual, String::ParseDecimalFlag::DisallowSign), String::ParseState::Failed);
+    CORRADE_COMPARE(String::parseHexadecimal(minHexString, actual, String::ParseHexadecimalFlag::DisallowSign), String::ParseState::Failed);
+
+    /* A value larger than the limit clamps to the limit. For decimal strings,
+       the last character is always a number less than 9, so incrementing it by
+       one works. For hexadecimal strings, the min value is something like
+       -100000, so incrementing the last char works as well. The max value is
+       then something like 7ffffffff so it has to be about incrementing the
+       first and replacing all fs with 0s. */
+    minString.back() += 1;
+    minHexString.back() += 1;
+    maxString.back() += 1;
+    maxHexString.front() += 1;
+    String::replaceAllInPlace(maxHexString, 'f', '0');
+    CORRADE_COMPARE(String::parseDecimal(minString, actual), String::ParseState::Clamped);
+    CORRADE_COMPARE(actual, min);
+    CORRADE_COMPARE(String::parseHexadecimal(minHexString, actual), String::ParseState::Clamped);
+    CORRADE_COMPARE(actual, min);
+    CORRADE_COMPARE(String::parseDecimal(maxString, actual), String::ParseState::Clamped);
+    CORRADE_COMPARE(actual, max);
+    CORRADE_COMPARE(String::parseHexadecimal(maxHexString, actual), String::ParseState::Clamped);
+    CORRADE_COMPARE(actual, max);
+}
+
+void StringTest::parseDecimalHexadecimalFloatNonNullTerminated() {
+    std::uint64_t valueUnsigned;
+    std::int64_t valueSigned;
+    std::uint64_t valueHexUnsigned;
+    std::int64_t valueHexSigned;
+    float valueFloat;
+    double valueDouble;
+
+    /* Parsing this should not leak over to the 3s at the end */
+    Containers::StringView nonNullTerminated = "999333"_s.prefix(3);
+    CORRADE_COMPARE(String::parseDecimal(nonNullTerminated, valueUnsigned), String::ParseState::Success);
+    CORRADE_COMPARE(String::parseDecimal(nonNullTerminated, valueSigned), String::ParseState::Success);
+    CORRADE_COMPARE(String::parseHexadecimal(nonNullTerminated, valueHexUnsigned), String::ParseState::Success);
+    CORRADE_COMPARE(String::parseHexadecimal(nonNullTerminated, valueHexSigned), String::ParseState::Success);
+    CORRADE_COMPARE(String::parseFloat(nonNullTerminated, valueFloat), String::ParseState::Success);
+    CORRADE_COMPARE(String::parseFloat(nonNullTerminated, valueDouble), String::ParseState::Success);
+    CORRADE_COMPARE(valueUnsigned, 999);
+    CORRADE_COMPARE(valueSigned, 999);
+    CORRADE_COMPARE(valueHexUnsigned, 0x999);
+    CORRADE_COMPARE(valueHexSigned, 0x999);
+    CORRADE_COMPARE(valueFloat, 999.0f);
+    CORRADE_COMPARE(valueDouble, 999.0);
+
+    /* Parsing this should not just abort at the null terminator. In other
+       words, this would pass if the string length wouldn't be correctly
+       propagated all the way. Have to split in two literals because FUCKING C
+       understands that as octal 03, ugh. */
+    Containers::StringView nullInTheMiddle = "999\0" "333"_s;
+    CORRADE_COMPARE(String::parseDecimal(nullInTheMiddle, valueUnsigned), String::ParseState::Failed);
+    CORRADE_COMPARE(String::parseDecimal(nullInTheMiddle, valueSigned), String::ParseState::Failed);
+    CORRADE_COMPARE(String::parseHexadecimal(nullInTheMiddle, valueHexUnsigned), String::ParseState::Failed);
+    CORRADE_COMPARE(String::parseHexadecimal(nullInTheMiddle, valueHexSigned), String::ParseState::Failed);
+    CORRADE_COMPARE(String::parseFloat(nullInTheMiddle, valueFloat), String::ParseState::Failed);
+    CORRADE_COMPARE(String::parseFloat(nullInTheMiddle, valueDouble), String::ParseState::Failed);
+}
+
+void StringTest::parseDecimalHexadecimalInvalid() {
+    CORRADE_SKIP_IF_NO_DEBUG_ASSERT();
+
+    /* A single-value range is fine */
+    std::uint64_t valueUnsigned;
+    std::int64_t valueSigned;
+    String::parseDecimal("222", valueUnsigned, 35, 35);
+    String::parseDecimal("333", valueSigned, 36, 36);
+    String::parseHexadecimal("22", valueUnsigned, 35, 35);
+    String::parseHexadecimal("33", valueSigned, 36, 36);
+
+    Containers::String out;
+    Error redirectError{&out};
+    String::parseDecimal("35", valueUnsigned, 36, 35);
+    String::parseDecimal("36", valueSigned, 37, 36);
+    String::parseHexadecimal("35", valueUnsigned, 36, 35);
+    String::parseHexadecimal("36", valueSigned, 37, 36);
+    CORRADE_COMPARE_AS(out,
+        "Utility::String::parseDecimal(): expected min to be not greater than max but got 36 and 35\n"
+        "Utility::String::parseDecimal(): expected min to be not greater than max but got 37 and 36\n"
+        "Utility::String::parseHexadecimal(): expected min to be not greater than max but got 36 and 35\n"
+        "Utility::String::parseHexadecimal(): expected min to be not greater than max but got 37 and 36\n",
+        TestSuite::Compare::String);
+}
+
 void StringTest::parseNumberSequence() {
     auto&& data = ParseNumberSequenceData[testCaseInstanceId()];
     setTestCaseDescription(data.name);
@@ -2063,6 +3027,386 @@ void StringTest::parseNumberSequenceError() {
     String::parseNumberSequence("3,5y7,x,25", 0, ~std::uint32_t{});
     CORRADE_COMPARE(out, "Utility::parseNumberSequence(): unrecognized character y in 3,5y7,x,25\n");
 }
+
+#ifdef CORRADE_BUILD_DEPRECATED
+CORRADE_IGNORE_DEPRECATED_PUSH
+void StringTest::deprecatedFromArray() {
+    CORRADE_COMPARE(String::fromArray(nullptr), "");
+    CORRADE_COMPARE(String::fromArray(nullptr, 37), "");
+
+    CORRADE_COMPARE(String::fromArray("abc\0def"), "abc");
+    CORRADE_COMPARE(String::fromArray("abc\0def", 7), std::string("abc\0def", 7));
+}
+
+void StringTest::deprecatedTrim() {
+    /* Spaces at the end */
+    CORRADE_COMPARE(String::ltrim("abc  "), "abc  ");
+    CORRADE_COMPARE(String::rtrim("abc  "), "abc");
+
+    /* Spaces at the beginning */
+    CORRADE_COMPARE(String::ltrim("  abc"), "abc");
+    CORRADE_COMPARE(String::rtrim("  abc"), "  abc");
+
+    /* Spaces on both beginning and end */
+    CORRADE_COMPARE(String::trim("  abc  "), "abc");
+
+    /* No spaces */
+    CORRADE_COMPARE(String::trim("abc"), "abc");
+
+    /* All spaces */
+    CORRADE_COMPARE(String::trim("\t\r\n\f\v "), "");
+
+    /* Special characters */
+    CORRADE_COMPARE(String::ltrim("oubya", "aeiyou"), "bya");
+    CORRADE_COMPARE(String::rtrim("oubya", "aeiyou"), "oub");
+    CORRADE_COMPARE(String::trim("oubya", "aeiyou"), "b");
+
+    /* Special characters as a string */
+    CORRADE_COMPARE(String::ltrim("oubya", std::string{"aeiyou"}), "bya");
+    CORRADE_COMPARE(String::rtrim("oubya", std::string{"aeiyou"}), "oub");
+    CORRADE_COMPARE(String::trim("oubya", std::string{"aeiyou"}), "b");
+}
+
+void StringTest::deprecatedTrimInPlace() {
+    /* Spaces at the end */
+    {
+        std::string a = "abc  ";
+        String::ltrimInPlace(a);
+        CORRADE_COMPARE(a, "abc  ");
+    } {
+        std::string a = "abc  ";
+        String::rtrimInPlace(a);
+        CORRADE_COMPARE(a, "abc");
+    }
+
+    /* Spaces at the beginning */
+    {
+        std::string a = "  abc";
+        String::ltrimInPlace(a);
+        CORRADE_COMPARE(a, "abc");
+    } {
+        std::string a = "  abc";
+        String::rtrimInPlace(a);
+        CORRADE_COMPARE(a, "  abc");
+    }
+
+    /* Spaces on both beginning and end */
+    {
+        std::string a = "  abc  ";
+        String::trimInPlace(a);
+        CORRADE_COMPARE(a, "abc");
+    }
+
+    /* No spaces */
+    {
+        std::string a = "abc";
+        String::trimInPlace(a);
+        CORRADE_COMPARE(a, "abc");
+    }
+
+    /* All spaces */
+    {
+        std::string a = "\t\r\n\f\v ";
+        String::trimInPlace(a);
+        CORRADE_COMPARE(a, "");
+    }
+
+    /* Special characters */
+    {
+        std::string a = "oubya";
+        String::ltrimInPlace(a, "aeiyou");
+        CORRADE_COMPARE(a, "bya");
+    } {
+        std::string a = "oubya";
+        String::rtrimInPlace(a, "aeiyou");
+        CORRADE_COMPARE(a, "oub");
+    } {
+        std::string a = "oubya";
+        String::trimInPlace(a, "aeiyou");
+        CORRADE_COMPARE(a, "b");
+    }
+
+    /* Special characters as a string */
+    {
+        std::string a = "oubya";
+        String::ltrimInPlace(a, std::string{"aeiyou"});
+        CORRADE_COMPARE(a, "bya");
+    } {
+        std::string a = "oubya";
+        String::rtrimInPlace(a, std::string{"aeiyou"});
+        CORRADE_COMPARE(a, "oub");
+    } {
+        std::string a = "oubya";
+        String::trimInPlace(a, std::string{"aeiyou"});
+        CORRADE_COMPARE(a, "b");
+    }
+}
+
+void StringTest::deprecatedSplit() {
+    /* These delegate into the StringView implementation and the tests are
+       kept just for archival purposes. The explicit cast to avoid an ambiguous
+       overload is kinda nasty, but since this is deprecated, I don't care
+       anymore. */
+
+    /* Empty */
+    CORRADE_COMPARE_AS(String::split(std::string{}, '/'),
+        std::vector<std::string>{}, TestSuite::Compare::Container);
+    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{}, '/'),
+        std::vector<std::string>{}, TestSuite::Compare::Container);
+
+    /* Only delimiter */
+    CORRADE_COMPARE_AS(String::split(std::string{"/"}, '/'),
+        (std::vector<std::string>{"", ""}), TestSuite::Compare::Container);
+    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{"/"}, '/'),
+        std::vector<std::string>{}, TestSuite::Compare::Container);
+
+    /* No delimiters */
+    CORRADE_COMPARE_AS(String::split(std::string{"abcdef"}, '/'),
+        std::vector<std::string>{"abcdef"}, TestSuite::Compare::Container);
+    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{"abcdef"}, '/'),
+        std::vector<std::string>{"abcdef"}, TestSuite::Compare::Container);
+
+    /* Common case */
+    CORRADE_COMPARE_AS(String::split(std::string{"ab/c/def"}, '/'),
+        (std::vector<std::string>{"ab", "c", "def"}), TestSuite::Compare::Container);
+    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{"ab/c/def"}, '/'),
+        (std::vector<std::string>{"ab", "c", "def"}), TestSuite::Compare::Container);
+
+    /* Empty parts */
+    CORRADE_COMPARE_AS(String::split(std::string{"ab//c/def//"}, '/'),
+        (std::vector<std::string>{"ab", "", "c", "def", "", ""}), TestSuite::Compare::Container);
+    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{"ab//c/def//"}, '/'),
+        (std::vector<std::string>{"ab", "c", "def"}), TestSuite::Compare::Container);
+}
+
+void StringTest::deprecatedSplitMultipleCharacters() {
+    /* These delegate into the StringView implementation and the tests are
+       kept just for archival purposes, until the whole thing is deprecated.
+       The explicit cast to avoid an ambiguous overload is kinda nasty, but
+       since this is eventually getting deprecated, I don't care anymore. */
+
+    const char delimiters[] = ".:;";
+
+    /* Empty */
+    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{}, delimiters),
+        std::vector<std::string>{}, TestSuite::Compare::Container);
+
+    /* Only delimiters */
+    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{".::;"}, delimiters),
+        std::vector<std::string>{}, TestSuite::Compare::Container);
+
+    /* No delimiters */
+    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{"abcdef"}, delimiters),
+        std::vector<std::string>{"abcdef"}, TestSuite::Compare::Container);
+
+    /* Common case */
+    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{"ab:c;def"}, delimiters),
+        (std::vector<std::string>{"ab", "c", "def"}), TestSuite::Compare::Container);
+
+    /* Empty parts */
+    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{"ab:c;;def."}, delimiters),
+        (std::vector<std::string>{"ab", "c", "def"}), TestSuite::Compare::Container);
+
+    /* Whitespace */
+    CORRADE_COMPARE_AS(String::splitWithoutEmptyParts(std::string{"ab c  \t \ndef\r"}),
+        (std::vector<std::string>{"ab", "c", "def"}), TestSuite::Compare::Container);
+}
+
+void StringTest::deprecatedPartition() {
+    /* Happy case */
+    CORRADE_COMPARE_AS(String::partition("ab=c", '='),
+        (Containers::StaticArray<3, std::string>{"ab", "=", "c"}),
+        TestSuite::Compare::Container);
+    CORRADE_COMPARE_AS(String::rpartition("ab=c", '='),
+        (Containers::StaticArray<3, std::string>{"ab", "=", "c"}),
+        TestSuite::Compare::Container);
+
+    /* Two occurrences */
+    CORRADE_COMPARE_AS(String::partition("ab=c=d", '='),
+        (Containers::StaticArray<3, std::string>{"ab", "=", "c=d"}),
+        TestSuite::Compare::Container);
+    CORRADE_COMPARE_AS(String::rpartition("ab=c=d", '='),
+        (Containers::StaticArray<3, std::string>{"ab=c", "=", "d"}),
+        TestSuite::Compare::Container);
+
+    /* Not found */
+    CORRADE_COMPARE_AS(String::partition("abc", '='),
+        (Containers::StaticArray<3, std::string>{"abc", "", ""}),
+        TestSuite::Compare::Container);
+    CORRADE_COMPARE_AS(String::rpartition("abc", '='),
+        (Containers::StaticArray<3, std::string>{"", "", "abc"}),
+        TestSuite::Compare::Container);
+
+    /* Empty input */
+    CORRADE_COMPARE_AS(String::partition("", '='),
+        (Containers::StaticArray<3, std::string>{"", "", ""}),
+        TestSuite::Compare::Container);
+    CORRADE_COMPARE_AS(String::rpartition("", '='),
+        (Containers::StaticArray<3, std::string>{"", "", ""}),
+        TestSuite::Compare::Container);
+
+    /* More characters */
+    CORRADE_COMPARE_AS(String::partition("ab, c, d", ", "),
+        (Containers::StaticArray<3, std::string>{"ab", ", ", "c, d"}),
+        TestSuite::Compare::Container);
+    CORRADE_COMPARE_AS(String::rpartition("ab, c, d", ", "),
+        (Containers::StaticArray<3, std::string>{"ab, c", ", ", "d"}),
+        TestSuite::Compare::Container);
+}
+
+void StringTest::deprecatedJoin() {
+    /* Empty */
+    CORRADE_COMPARE(String::join({}, '/'), "");
+    CORRADE_COMPARE(String::joinWithoutEmptyParts({}, '/'), "");
+
+    /* One empty value */
+    CORRADE_COMPARE(String::join({""}, '/'), "");
+    CORRADE_COMPARE(String::joinWithoutEmptyParts({""}, '/'), "");
+
+    /* Two empty values */
+    CORRADE_COMPARE(String::join({"", ""}, '/'),
+        "/");
+    CORRADE_COMPARE(String::joinWithoutEmptyParts({"", ""}, '/'),
+        "");
+
+    /* One value */
+    CORRADE_COMPARE(String::join({"abcdef"}, '/'),
+        "abcdef");
+    CORRADE_COMPARE(String::joinWithoutEmptyParts({"abcdef"}, '/'),
+        "abcdef");
+
+    /* Common case, also multi-character and std::string joiner */
+    CORRADE_COMPARE(String::join({"ab", "c", "def"}, '/'),
+        "ab/c/def");
+    CORRADE_COMPARE(String::join({"ab", "c", "def"}, ", "),
+        "ab, c, def");
+    CORRADE_COMPARE(String::join({"ab", "c", "def"}, std::string{", "}),
+        "ab, c, def");
+    CORRADE_COMPARE(String::joinWithoutEmptyParts({"ab", "c", "def"}, '/'),
+        "ab/c/def");
+    CORRADE_COMPARE(String::joinWithoutEmptyParts({"ab", "c", "def"}, ", "),
+        "ab, c, def");
+    CORRADE_COMPARE(String::joinWithoutEmptyParts({"ab", "c", "def"}, std::string{", "}),
+        "ab, c, def");
+
+    /* Empty parts */
+    CORRADE_COMPARE(String::join({"ab", "", "c", "def", "", ""}, '/'),
+        "ab//c/def//");
+    CORRADE_COMPARE(String::joinWithoutEmptyParts({"ab", "", "c", "def", "", ""}, '/'),
+        "ab/c/def");
+}
+
+void StringTest::deprecatedBeginsWith() {
+    /* These delegate into the StringView implementation and the tests are
+       kept just for archival purposes */
+
+    CORRADE_VERIFY(String::beginsWith("overcomplicated", "over"));
+    CORRADE_VERIFY(String::beginsWith("overcomplicated", std::string{"over"}));
+
+    CORRADE_VERIFY(!String::beginsWith("overcomplicated", "oven"));
+    CORRADE_VERIFY(!String::beginsWith("overcomplicated", std::string{"oven"}));
+
+    CORRADE_VERIFY(String::beginsWith("hello", 'h'));
+    CORRADE_VERIFY(!String::beginsWith("hello", 'o'));
+    CORRADE_VERIFY(!String::beginsWith("", 'h'));
+}
+
+void StringTest::deprecatedBeginsWithEmpty() {
+    /* These delegate into the StringView implementation and the tests are
+       kept just for archival purposes */
+
+    CORRADE_VERIFY(!String::beginsWith("", "overcomplicated"));
+    CORRADE_VERIFY(String::beginsWith("overcomplicated", ""));
+    CORRADE_VERIFY(String::beginsWith("", ""));
+}
+
+void StringTest::deprecatedViewBeginsWith() {
+    /* These delegate into the StringView implementation and the tests are
+       kept just for archival purposes */
+
+    CORRADE_VERIFY(String::viewBeginsWith("overcomplicated", "over"));
+    CORRADE_VERIFY(!String::viewBeginsWith("overcomplicated", "oven"));
+
+    CORRADE_VERIFY(String::viewBeginsWith("hello", 'h'));
+    CORRADE_VERIFY(!String::viewBeginsWith("hello", 'o'));
+    CORRADE_VERIFY(!String::viewBeginsWith("", 'h'));
+}
+
+void StringTest::deprecatedEndsWith() {
+    /* These delegate into the StringView implementation and the tests are
+       kept just for archival purposes */
+
+    CORRADE_VERIFY(String::endsWith("overcomplicated", "complicated"));
+    CORRADE_VERIFY(String::endsWith("overcomplicated", std::string{"complicated"}));
+
+    CORRADE_VERIFY(!String::endsWith("overcomplicated", "somplicated"));
+    CORRADE_VERIFY(!String::endsWith("overcomplicated", std::string{"somplicated"}));
+
+    CORRADE_VERIFY(!String::endsWith("overcomplicated", "overcomplicated even more"));
+
+    CORRADE_VERIFY(!String::endsWith("hello", 'h'));
+    CORRADE_VERIFY(String::endsWith("hello", 'o'));
+    CORRADE_VERIFY(!String::endsWith("", 'h'));
+}
+
+void StringTest::deprecatedEndsWithEmpty() {
+    /* These delegate into the StringView implementation and the tests are
+       kept just for archival purposes */
+
+    CORRADE_VERIFY(!String::endsWith("", "overcomplicated"));
+    CORRADE_VERIFY(String::endsWith("overcomplicated", ""));
+    CORRADE_VERIFY(String::endsWith("", ""));
+}
+
+void StringTest::deprecatedViewEndsWith() {
+    /* These delegate into the StringView implementation and the tests are
+       kept just for archival purposes */
+
+    CORRADE_VERIFY(String::viewEndsWith({"overcomplicated", 15}, "complicated"));
+    CORRADE_VERIFY(!String::viewEndsWith("overcomplicated", "complicated"));
+
+    CORRADE_VERIFY(!String::viewEndsWith({"overcomplicated", 15}, "somplicated"));
+    CORRADE_VERIFY(!String::viewEndsWith({"overcomplicated", 15}, "overcomplicated even more"));
+
+    CORRADE_VERIFY(!String::viewEndsWith({"hello", 5}, 'h'));
+    CORRADE_VERIFY(String::viewEndsWith({"hello", 5}, 'o'));
+    CORRADE_VERIFY(!String::viewEndsWith("hello", 'o'));
+    CORRADE_VERIFY(!String::viewEndsWith("", 'h'));
+}
+
+void StringTest::deprecatedStripPrefix() {
+    CORRADE_COMPARE(String::stripPrefix("overcomplicated", "over"), "complicated");
+    CORRADE_COMPARE(String::stripPrefix("overcomplicated", std::string{"over"}), "complicated");
+    CORRADE_COMPARE(String::stripPrefix("overcomplicated", 'o'), "vercomplicated");
+    CORRADE_COMPARE(String::stripPrefix("overcomplicated", ""), "overcomplicated");
+}
+
+void StringTest::deprecatedStripPrefixInvalid() {
+    CORRADE_SKIP_IF_NO_ASSERT();
+
+    Containers::String out;
+    Error redirectOutput{&out};
+    String::stripPrefix("overcomplicated", "complicated");
+    CORRADE_COMPARE(out, "Utility::String::stripPrefix(): string doesn't begin with given prefix\n");
+}
+
+void StringTest::deprecatedStripSuffix() {
+    CORRADE_COMPARE(String::stripSuffix("overcomplicated", "complicated"), "over");
+    CORRADE_COMPARE(String::stripSuffix("overcomplicated", std::string{"complicated"}), "over");
+    CORRADE_COMPARE(String::stripSuffix("overcomplicated", 'd'), "overcomplicate");
+    CORRADE_COMPARE(String::stripSuffix("overcomplicated", ""), "overcomplicated");
+}
+
+void StringTest::deprecatedStripSuffixInvalid() {
+    CORRADE_SKIP_IF_NO_ASSERT();
+
+    Containers::String out;
+    Error redirectOutput{&out};
+    String::stripSuffix("overcomplicated", "over");
+    CORRADE_COMPARE(out, "Utility::String::stripSuffix(): string doesn't end with given suffix\n");
+}
+CORRADE_IGNORE_DEPRECATED_POP
+#endif
 
 }}}}
 

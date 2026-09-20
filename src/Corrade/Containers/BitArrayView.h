@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -254,6 +254,18 @@ template<class T> class BasicBitArrayView {
         void set(std::size_t i) const;
 
         /**
+         * @brief Use @ref setAll(bool) const to set all bits or @ref set(std::size_t, bool) const to set a single bit to a concrete value
+         *
+         * Deleted to avoid accidental use of @ref set(std::size_t) const with
+         * a @cpp bool @ce.
+         */
+        #ifdef DOXYGEN_GENERATING_OUTPUT
+        void set(bool) const = delete;
+        #else
+        template<class U, class V = T, typename std::enable_if<std::is_same<U, bool>::value && !std::is_const<V>::value, int>::type = 0> void set(U) const = delete;
+        #endif
+
+        /**
          * @brief Set all bits
          *
          * Enabled only on a @ref MutableBitArrayView. You can set just a range
@@ -262,7 +274,14 @@ template<class T> class BasicBitArrayView {
          *      @ref set(std::size_t) const
          */
         #ifndef DOXYGEN_GENERATING_OUTPUT
-        template<class U = T, typename std::enable_if<!std::is_const<U>::value, int>::type = 0>
+        /* typename std::enable_if<std::is_const<U>::value, int>::type = 0
+           cannot be used because GCC and Clang then have different mangling
+           for the deinlined specialization in BitArrayView.cpp, which means
+           Corrade built with GCC cannot be used with Clang and vice versa.
+           Applies to resetAll() as well but not set() / reset() as those are
+           inline in the header. Similar case is in StringView.h, along with
+           more details about how the names get mangled. */
+        template<class U = T, class = typename std::enable_if<!std::is_const<U>::value>::type>
         #endif
         void setAll() const;
 
@@ -279,6 +298,18 @@ template<class T> class BasicBitArrayView {
         void reset(std::size_t i) const;
 
         /**
+         * @brief Use @ref setAll(bool) const to set all bits or @ref set(std::size_t, bool) const to set a single bit to a concrete value
+         *
+         * Deleted to avoid accidental use of @ref reset(std::size_t) const
+         * with a @cpp bool @ce.
+         */
+        #ifdef DOXYGEN_GENERATING_OUTPUT
+        void reset(bool) const = delete;
+        #else
+        template<class U, class V = T, typename std::enable_if<std::is_same<U, bool>::value && !std::is_const<V>::value, int>::type = 0> void reset(U) const = delete;
+        #endif
+
+        /**
          * @brief Reset all bits
          *
          * Enabled only on a @ref MutableBitArrayView. You can set just a range
@@ -286,7 +317,10 @@ template<class T> class BasicBitArrayView {
          * @see @ref setAll(), @ref reset(std::size_t) const
          */
         #ifndef DOXYGEN_GENERATING_OUTPUT
-        template<class U = T, typename std::enable_if<!std::is_const<U>::value, int>::type = 0>
+        /* typename std::enable_if<std::is_const<U>::value, int>::type = 0
+           cannot be used because GCC and Clang then have different mangling
+           for the deinlined specialization in BitArrayView.cpp, see above */
+        template<class U = T, class = typename std::enable_if<!std::is_const<U>::value>::type>
         #endif
         void resetAll() const;
 
@@ -524,7 +558,7 @@ template<class T> template<class U, typename std::enable_if<!std::is_const<U>::v
 template<class T> template<class U, typename std::enable_if<!std::is_const<U>::value, int>::type> inline void BasicBitArrayView<T>::set(std::size_t i, bool value) const {
     CORRADE_DEBUG_ASSERT(i < (_sizeOffset >> 3),
         "Containers::BitArrayView::set(): index" << i << "out of range for" << (_sizeOffset >> 3) << "bits", );
-    /* http://graphics.stanford.edu/~seander/bithacks.html#ConditionalSetOrClearBitsWithoutBranching */
+    /* https://graphics.stanford.edu/~seander/bithacks.html#ConditionalSetOrClearBitsWithoutBranching */
     char& byte = static_cast<T*>(_data)[((_sizeOffset & 0x07) + i) >> 3];
     byte ^= (-char(value) ^ byte) & (1 << ((_sizeOffset + i) & 0x07));
 }

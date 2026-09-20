@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -67,6 +67,7 @@ struct StridedDimensionsTest: TestSuite::Tester {
     void construct3D();
     void constructNoInit();
     void constructCopy();
+    void constructDimensionOverloads();
 
     void convertScalar();
     void convertScalar3D();
@@ -86,6 +87,7 @@ StridedDimensionsTest::StridedDimensionsTest() {
               &StridedDimensionsTest::construct3D,
               &StridedDimensionsTest::constructNoInit,
               &StridedDimensionsTest::constructCopy,
+              &StridedDimensionsTest::constructDimensionOverloads,
 
               &StridedDimensionsTest::convertScalar,
               &StridedDimensionsTest::convertScalar3D,
@@ -215,6 +217,30 @@ void StridedDimensionsTest::constructCopy() {
     CORRADE_VERIFY(std::is_nothrow_copy_assignable<Size3D>::value);
 }
 
+std::size_t product(const Size1D& size) {
+    return size;
+}
+std::size_t product(const Size2D& size) {
+    return size[0]*size[1];
+}
+std::size_t product(const Size3D& size) {
+    return size[0]*size[1]*size[2];
+}
+std::size_t product(const Size4D& size) {
+    return size[0]*size[1]*size[2]*size[3];
+}
+
+void StridedDimensionsTest::constructDimensionOverloads() {
+    /* It should be possible to construct those with just {} and not have them
+       ambiguous between each other, similarly as is possible with Magnum's
+       Vector2/3/4 */
+    CORRADE_COMPARE(product(5), 5);
+    CORRADE_COMPARE(product({5}), 5);
+    CORRADE_COMPARE(product({5, 2}), 10);
+    CORRADE_COMPARE(product({5, 3, 2}), 30);
+    CORRADE_COMPARE(product({5, 3, 4, 2}), 120);
+}
+
 void StridedDimensionsTest::convertScalar() {
     Size1D a = 1337;
     std::size_t b = a;
@@ -341,12 +367,14 @@ void StridedDimensionsTest::accessInvalid() {
 
 void StridedDimensionsTest::accessRangeFor() {
     Size3D a{6, 12, 28};
-    for(std::size_t& i: a) ++i;
+    for(std::size_t& i: a)
+        ++i;
     CORRADE_COMPARE(a, (Size3D{7, 13, 29}));
 
     const Size3D ca = a;
     std::size_t sum = 1;
-    for(std::size_t i: ca) sum *= i;
+    for(std::size_t i: ca)
+        sum *= i;
     CORRADE_COMPARE(sum, 29*13*7);
 }
 

@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -25,6 +25,7 @@
 */
 
 #include "Corrade/TestSuite/Tester.h"
+#include "Corrade/TestSuite/Compare/Numeric.h"
 #include "Corrade/Utility/Macros.h"
 
 namespace Corrade { namespace Utility { namespace Test { namespace {
@@ -32,13 +33,31 @@ namespace Corrade { namespace Utility { namespace Test { namespace {
 struct MacrosCpp17Test: TestSuite::Tester {
     explicit MacrosCpp17Test();
 
+    void nodiscard();
     void constexpr20();
     void fallthrough();
 };
 
 MacrosCpp17Test::MacrosCpp17Test() {
-    addTests({&MacrosCpp17Test::constexpr20,
+    addTests({&MacrosCpp17Test::nodiscard,
+              &MacrosCpp17Test::constexpr20,
               &MacrosCpp17Test::fallthrough});
+}
+
+CORRADE_NODISCARD("this message will not be printed until C++20") int nodiscardReturn(int a) { return a + 1; }
+
+void MacrosCpp17Test::nodiscard() {
+    /* CORRADE_NODISCARD has different implementation with C++17 (and then with
+       C++20), other than that the test case is equivalent to
+       MacrosTest::nodiscard() */
+
+    int a = 2;
+    #if 1 /* Set to 0 to produce a warning */
+    a +=
+    #endif
+    nodiscardReturn(3);
+
+    CORRADE_COMPARE_AS(a, 2, TestSuite::Compare::GreaterOrEqual);
 }
 
 struct ConstexprNoInit {

@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -25,11 +25,11 @@
 */
 
 #include <iostream>
-#include <sstream> /** @todo remove once Debug is fully stream-free */
+#include <sstream> /** @todo remove once TestSuite is stream-free */
 
 #include "Corrade/Containers/ArrayView.h"
 #include "Corrade/Containers/String.h"
-#include "Corrade/Containers/StringStl.h" /** @todo remove once Debug is fully stream-free */
+#include "Corrade/Containers/StringStl.h" /** @todo remove once TestSuite is stream-free */
 #include "Corrade/TestSuite/Tester.h"
 #include "Corrade/TestSuite/Compare/StringToFile.h"
 #include "Corrade/Utility/Path.h"

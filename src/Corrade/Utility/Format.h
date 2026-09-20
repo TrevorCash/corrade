@@ -4,8 +4,9 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
+    Copyright © 2025 Andy Maloney <asmaloney@gmail.com>
 
     Permission is hereby granted, free of charge, to any person obtaining a
     copy of this software and associated documentation files (the "Software"),
@@ -78,7 +79,8 @@ In order to write a literal curly brace to the output, simply double it:
 
 | Type                                  | Default behavior
 | ------------------------------------- | ------------------------------------
-| @cpp char @ce, @cpp unsigned char @ce | Written as a base-10 integer (*not as a character*)
+| @cpp bool @ce | Written as a base-10 integer (i.e., @cpp 0 @ce or @cpp 1 @ce)
+| @cpp char @ce, @cpp signed char @ce, @cpp unsigned char @ce | Written as a base-10 integer (*not as a character*)
 | @cpp short @ce, @cpp unsigned short @ce | Written as a base-10 integer
 | @cpp int @ce, @cpp unsigned int @ce   | Written as a base-10 integer
 | @cpp long @ce, @cpp unsigned long @ce | Written as a base-10 integer
@@ -111,24 +113,24 @@ The `type` is a single character specifying output conversion:
 Value           | Meaning
 --------------- | -------
 @cpp 'c' @ce <b></b> | Character. Valid only for 8-, 16- and 32-bit integer types. At the moment, arbitrary UTF-32 codepoints don't work, only 7-bit ASCII values have a guaranteed output.
-@cpp 'd' @ce <b></b> | Decimal integer (base 10). Valid only for integer types. Default for integers if nothing is specified.
-@cpp 'o' @ce <b></b> | Octal integer (base 8). Valid only for integer types.
-@cpp 'x' @ce <b></b> | Hexadecimal integer (base 16) with lowercase letters a--f. Valid only for integer types.
-@cpp 'X' @ce <b></b> | Hexadecimal integer with uppercase letters A--F. Valid only for integer types.
+@cpp 'd' @ce <b></b> | Decimal integer (base 10). Valid only for integer types and a @cpp bool @ce. Default for integers if nothing is specified.
+@cpp 'o' @ce <b></b> | Octal integer (base 8). Valid only for integer types and a @cpp bool @ce.
+@cpp 'x' @ce <b></b> | Hexadecimal integer (base 16) with lowercase letters a--f. Valid only for integer types and a @cpp bool @ce.
+@cpp 'X' @ce <b></b> | Hexadecimal integer with uppercase letters A--F. Valid only for integer types and a @cpp bool @ce.
 @cpp 'g' @ce <b></b> | General floating-point, formatting the value either in exponent notation or fixed-point format depending on its magnitude. The exponent `e` and special values such as `nan` or `inf` are printed lowercase. Valid only for floating-point types.
 @cpp 'G' @ce <b></b> | General floating-point. The exponent `E` and special values such as `NAN` or `INF` are printed uppercase. Valid only for floating-point types.
 @cpp 'e' @ce <b></b> | Exponent notation. The exponent `e` and special values such as `nan` or `inf` are printed lowercase. Valid only for floating-point types.
 @cpp 'E' @ce <b></b> | Exponent notation. The exponent `E` and special values such as `NAN` or `INF` are printed uppercase. Valid only for floating-point types.
 @cpp 'f' @ce <b></b> | Fixed point. The exponent `e` and special values such as `nan` or `inf` are printed lowercase. Valid only for floating-point types.
 @cpp 'F' @ce <b></b> | Fixed point. The exponent `E` and special values such as `NAN` or `INF` are printed uppercase. Valid only for floating-point types.
-<em>none</em>   | Default based on type, equivalent to @cpp 'd' @ce for integral types and @cpp 'g' @ce for floating-point types. The only valid specifier for strings.
+<em>none</em>   | Default based on type, equivalent to @cpp 'd' @ce for integral types and @cpp bool @ce, and @cpp 'g' @ce for floating-point types. The only valid specifier for strings.
 
 The `precision` field specifies a precision of the output. It's interpreted
 differently based on the data type:
 
 Type            | Meaning
 --------------- | -------
-Integers, except for the @cpp 'c' @ce type specifier | If the number of decimals is smaller than `precision`, the integer gets padded with the `0` character from the left. If both the number and `precision` is @cpp 0 @ce, nothing is written to the output. Default `precision` is @cpp 1 @ce.
+Integers and @cpp bool @ce, except for the @cpp 'c' @ce type specifier | If the number of decimals is smaller than `precision`, the integer gets padded with the `0` character from the left. If both the value and `precision` is @cpp 0 @ce, nothing is written to the output. Default `precision` is @cpp 1 @ce.
 Floating-point types with default or @cpp 'g' @ce / @cpp 'G' @ce type specifier | The number is printed with *at most* `precision` significant digits. Default `precision` depends on data type, see the type support table above.
 Floating-point types with @cpp 'e' @ce / @cpp 'E' @ce type specifier | The number is always printed with *exactly* one decimal, `precision` decimal points (including trailing zeros) and the exponent. Default `precision` depends on data type, see the type support table above.
 Floating-point types with @cpp 'f' @ce / @cpp 'F' @ce type specifier | The number is always printed with *exactly* `precision` decimal points including trailing zeros. Default `precision` depends on data type, see the type support table above.
@@ -242,15 +244,24 @@ template<> struct Formatter<int> {
     static CORRADE_UTILITY_EXPORT std::size_t format(const Containers::MutableStringView& buffer, int value, int precision, FormatType type);
     static CORRADE_UTILITY_EXPORT void format(std::FILE* file, int value, int precision, FormatType type);
 };
-template<> struct Formatter<char>: Formatter<int> {};
 template<> struct Formatter<short>: Formatter<int> {};
 
 template<> struct Formatter<unsigned int> {
     static CORRADE_UTILITY_EXPORT std::size_t format(const Containers::MutableStringView& buffer, unsigned int value, int precision, FormatType type);
     static CORRADE_UTILITY_EXPORT void format(std::FILE* file, unsigned int value, int precision, FormatType type);
 };
-template<> struct Formatter<unsigned char>: Formatter<unsigned int> {};
 template<> struct Formatter<unsigned short>: Formatter<unsigned int> {};
+
+/* The char is signed or unsigned depending on platform (ARM has it unsigned by
+   default for example, because it maps better to the instruction set), and
+   thus std::int8_t is usually a typedef to `signed char`. Be sure to support
+   that as well, `signed short` and such OTOH isn't so important. Also, while I
+   could delegate `char` to `std::conditional<std::is_signed<char>::value, int,
+   unsigned int>::type`, it doesn't matter because the two variants currently
+   don't behave any different and `int` will cover the whole range easily. */
+template<> struct Formatter<char>: Formatter<int> {};
+template<> struct Formatter<signed char>: Formatter<int> {};
+template<> struct Formatter<unsigned char>: Formatter<unsigned int> {};
 
 template<> struct Formatter<long long> {
     static CORRADE_UTILITY_EXPORT std::size_t format(const Containers::MutableStringView& buffer, long long value, int precision, FormatType type);
@@ -263,6 +274,16 @@ template<> struct Formatter<unsigned long long> {
     static CORRADE_UTILITY_EXPORT void format(std::FILE* file, unsigned long long value, int precision, FormatType type);
 };
 template<> struct Formatter<unsigned long>: Formatter<unsigned long long> {};
+
+/* Similarly to chars being interpreted as integers (and not characters), bools
+   are treated as 1-bit numbers, since that's the least controversial approach.
+   In other words, precision specification and bin/hex/oct works for those as
+   well. If a string representation is needed, one can always pass something
+   like `value ? "true" : "false"` instead of `value`. */
+template<> struct Formatter<bool> {
+    static CORRADE_UTILITY_EXPORT std::size_t format(const Containers::MutableStringView& buffer, bool value, int precision, FormatType type);
+    static CORRADE_UTILITY_EXPORT void format(std::FILE* file, bool value, int precision, FormatType type);
+};
 
 template<> struct Formatter<float> {
     static CORRADE_UTILITY_EXPORT std::size_t format(const Containers::MutableStringView& buffer, float value, int precision, FormatType type);
@@ -305,7 +326,10 @@ struct BufferFormatter {
     /* Needed for a sentinel value (C arrays can't have zero size) */
     /*implicit*/ constexpr BufferFormatter(): _fn{}, _value{} {}
 
-    template<class T> explicit BufferFormatter(const T& value): _value{&value} {
+    /* Clang 19's -Wshadow-uncaptured-local warns if `value` is used for both
+       the outer and inner argument, using `value_` instead. Clang 20 doesn't
+       seem to warn anymore. */
+    template<class T> explicit BufferFormatter(const T& value_): _value{&value_} {
         _fn = [](const Containers::MutableStringView& buffer, const void* value, int precision, FormatType type) {
             return Formatter<typename std::decay<T>::type>::format(buffer, *static_cast<const T*>(value), precision, type);
         };
@@ -327,7 +351,10 @@ struct FileFormatter {
     /* Needed for a sentinel value (C arrays can't have zero size) */
     /*implicit*/ constexpr FileFormatter(): _fn{}, _value{} {}
 
-    template<class T> explicit FileFormatter(const T& value): _value{&value} {
+    /* Clang 19's -Wshadow-uncaptured-local warns if `value` is used for both
+       the outer and inner argument, using `value_` instead. Clang 20 doesn't
+       seem to warn anymore. */
+    template<class T> explicit FileFormatter(const T& value_): _value{&value_} {
         _fn = [](std::FILE* file, const void* value, int precision, FormatType type) {
             Formatter<typename std::decay<T>::type>::format(file, *static_cast<const T*>(value), precision, type);
         };

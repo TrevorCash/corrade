@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -24,6 +24,8 @@
     DEALINGS IN THE SOFTWARE.
 */
 
+#define _CORRADE_NO_DEPRECATED_INTERCONNECT
+
 #include "Receiver.h"
 
 #include "Corrade/Interconnect/Connection.h"
@@ -33,6 +35,7 @@
 
 namespace Corrade { namespace Interconnect {
 
+CORRADE_IGNORE_DEPRECATED_PUSH
 Receiver::Receiver() = default;
 
 Receiver::~Receiver() { disconnectAllSlots(); }
@@ -45,7 +48,8 @@ void Receiver::disconnectAllSlots() {
     for(Implementation::ReceiverConnection& connection: _connections) {
         auto range = connection.emitter->_connections.equal_range(connection.signal);
         for(auto it = range.first; it != range.second; ++it) {
-            if(&it->second != &*connection.data) continue;
+            if(&it->second != &*connection.data)
+                continue;
 
             connection.emitter->_connections.erase(it);
             connection.emitter->_connectionsChanged = true;
@@ -55,5 +59,6 @@ void Receiver::disconnectAllSlots() {
 
     _connections.clear();
 }
+CORRADE_IGNORE_DEPRECATED_POP
 
 }}

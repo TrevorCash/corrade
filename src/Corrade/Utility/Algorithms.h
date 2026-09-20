@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -146,10 +146,10 @@ template<unsigned dimensions, class T> void copy(const Containers::StridedArrayV
 namespace Implementation {
 
 /* Vaguely inspired by the Utility::IsIterable type trait */
-template<class T, class View = decltype(Containers::Implementation::ErasedArrayViewConverter<typename std::remove_reference<T&&>::type>::from(std::declval<T&&>()))> static Containers::ArrayView<typename View::Type> arrayViewTypeFor(T&&);
-template<class T> static Containers::ArrayView<T> arrayViewTypeFor(const Containers::ArrayView<T>&);
-template<std::size_t size, class T> static Containers::ArrayView<T> arrayViewTypeFor(T(&)[size]);
-template<unsigned dimensions, class T> static Containers::StridedArrayView<dimensions, T> arrayViewTypeFor(const Containers::StridedArrayView<dimensions, T>&);
+template<class T, class View = decltype(Containers::Implementation::ErasedArrayViewConverter<typename std::remove_reference<T&&>::type>::from(std::declval<T&&>()))> Containers::ArrayView<typename View::Type> arrayViewTypeFor(T&&);
+template<class T> Containers::ArrayView<T> arrayViewTypeFor(const Containers::ArrayView<T>&);
+template<std::size_t size, class T> Containers::ArrayView<T> arrayViewTypeFor(T(&)[size]);
+template<unsigned dimensions, class T> Containers::StridedArrayView<dimensions, T> arrayViewTypeFor(const Containers::StridedArrayView<dimensions, T>&);
 
 }
 

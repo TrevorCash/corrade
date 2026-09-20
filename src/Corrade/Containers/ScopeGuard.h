@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -70,9 +70,9 @@ just a parameter-less function or lambda:
 
 @section Containers-ScopeGuard-deferred Deferred guard creation
 
-Using the @ref NoCreate tag, it's possible to create an empty instance that's
-populated later by moving another object over it, for example to have a
-conditional guard:
+Using the @relativeref{Corrade,NoCreate} tag, it's possible to create an empty
+instance that's populated later by moving another object over it, for example
+to have a conditional guard:
 
 @snippet Containers.cpp ScopeGuard-deferred
 
@@ -142,7 +142,8 @@ class ScopeGuard {
          * @ref release() has been called.
          */
         ~ScopeGuard() {
-            if(_deleterWrapper) _deleterWrapper(&_deleter, &_handle);
+            if(_deleterWrapper)
+                _deleterWrapper(&_deleter, &_handle);
         }
 
     private:
@@ -213,7 +214,15 @@ inline ScopeGuard& ScopeGuard::operator=(ScopeGuard&& other) noexcept {
 template<class T, class U> ScopeGuard::ScopeGuard(T handle, U(*deleter)(T)): _deleter{reinterpret_cast<void(*)()>(deleter)}, _handle{reinterpret_cast<void*>(handle)} {
     static_assert(sizeof(T) <= sizeof(void*), "handle too big to store");
     _deleterWrapper = [](void(**deleter)(), void** handle) {
+        /* One more case of the C4312 warning explained above */
+        #ifdef CORRADE_TARGET_MSVC
+        #pragma warning(push)
+        #pragma warning(disable: 4312)
+        #endif
         (*reinterpret_cast<U(**)(T)>(deleter))(*reinterpret_cast<T*>(handle));
+        #ifdef CORRADE_TARGET_MSVC
+        #pragma warning(pop)
+        #endif
     };
 }
 

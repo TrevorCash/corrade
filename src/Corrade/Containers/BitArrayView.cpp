@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -40,7 +40,8 @@
 namespace Corrade { namespace Containers {
 
 /* Yes, I'm also surprised this works. On Windows (MSVC, clang-cl and MinGw) it
-   needs an explicit export otherwise the symbol doesn't get exported. */
+   needs an explicit export otherwise the symbol doesn't get exported. See the
+   note about SFINAE mangling in the header, tho. */
 template<> template<> CORRADE_UTILITY_EXPORT void BasicBitArrayView<char>::setAll() const {
     /* If there are no bits to go through, bail. Otherwise the code touches at
        least one byte. */
@@ -81,7 +82,8 @@ template<> template<> CORRADE_UTILITY_EXPORT void BasicBitArrayView<char>::setAl
 }
 
 /* Yes, I'm also surprised this works. On Windows (MSVC, clang-cl and MinGw) it
-   needs an explicit export otherwise the symbol doesn't get exported. */
+   needs an explicit export otherwise the symbol doesn't get exported. See the
+   note about SFINAE mangling in the header, tho. */
 template<> template<> CORRADE_UTILITY_EXPORT void BasicBitArrayView<char>::resetAll() const {
     /* If there are no bits to go through, bail. Otherwise the code touches at
        least one byte. */
@@ -259,9 +261,9 @@ CORRADE_UTILITY_CPU_MAYBE_UNUSED CORRADE_ENABLE(POPCNT,BMI1) typename std::decay
 }
 #endif
 
-/* http://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel and
-   https://en.wikipedia.org/wiki/Hamming_weight#Efficient_implementation for a
-   64-bit version. */
+/* https://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
+   and https://en.wikipedia.org/wiki/Hamming_weight#Efficient_implementation
+   for a 64-bit version. */
 CORRADE_ALWAYS_INLINE std::uint64_t popcount(Cpu::ScalarT, std::uint64_t v) {
     /* On Emscripten this *does* expand to a WASM i64.popcnt instruction with
        -O3 (https://godbolt.org/z/4dhsKjq5e), but to play safe I'll just use
@@ -383,7 +385,8 @@ Utility::Debug& operator<<(Utility::Debug& debug, BitArrayView value) {
             mask = 1;
         }
 
-        if(i && i % 8 == 0) debug << ",";
+        if(i && i % 8 == 0)
+            debug << ",";
 
         debug << (*data & mask ? "1" : "0") << Utility::Debug::nospace;
 

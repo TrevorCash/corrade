@@ -5,7 +5,7 @@
 #   This file is part of Corrade.
 #
 #   Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-#               2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+#               2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
 #             Vladimír Vondruš <mosra@centrum.cz>
 #
 #   Permission is hereby granted, free of charge, to any person obtaining a
@@ -26,6 +26,8 @@
 #   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 #   DEALINGS IN THE SOFTWARE.
 #
+
+message(DEPRECATION "The CorradeLibSuffix module and the LIB_SUFFIX variable is deprecated. Use the CMAKE_INSTALL_LIBDIR variable provided by CMake's builtin GNUInstallDirs module instead.")
 
 if(NOT DEFINED LIB_SUFFIX)
     # Android. Given a CMAKE_INSTALL_PREFIX, check if the expected lib

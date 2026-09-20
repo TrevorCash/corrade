@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -60,12 +60,38 @@
 #endif
 #ifdef CORRADE_ENABLE_NEON
 #include <arm_neon.h>
+#if defined(CORRADE_TARGET_MSVC) && !defined(CORRADE_TARGET_CLANG)
+#include <intrin.h> /* _CountTrailingZeros64() */
+#endif
 #endif
 #ifdef CORRADE_ENABLE_SIMD128
 #include <wasm_simd128.h>
 #endif
 
 namespace Corrade { namespace Containers {
+
+#ifndef CORRADE_SINGLES_NO_DEBUG
+Utility::Debug& operator<<(Utility::Debug& debug, const StringViewFlag value) {
+    debug << "Containers::StringViewFlag" << Utility::Debug::nospace;
+
+    switch(value) {
+        /* LCOV_EXCL_START */
+        #define _c(v) case StringViewFlag::v: return debug << "::" #v;
+        _c(Global)
+        _c(NullTerminated)
+        #undef _c
+        /* LCOV_EXCL_STOP */
+    }
+
+    return debug << "(" << Utility::Debug::nospace << Utility::Debug::hex << std::size_t(value) << Utility::Debug::nospace << ")";
+}
+
+Utility::Debug& operator<<(Utility::Debug& debug, const StringViewFlags value) {
+    return enumSetDebugOutput(debug, value, "Containers::StringViewFlags{}", {
+        StringViewFlag::Global,
+        StringViewFlag::NullTerminated});
+}
+#endif
 
 template<class T> BasicStringView<T>::BasicStringView(T* const data, const StringViewFlags flags, std::nullptr_t) noexcept: BasicStringView{data,
     data ? std::strlen(data) : 0,
@@ -74,7 +100,8 @@ template<class T> BasicStringView<T>::BasicStringView(T* const data, const Strin
 template<class T> BasicStringView<T>::BasicStringView(String& string) noexcept: BasicStringView{string.data(), string.size(), string.viewFlags()} {}
 
 /* Yes, I'm also surprised this works. On Windows (MSVC, clang-cl and MinGw) it
-   needs an explicit export otherwise the symbol doesn't get exported. */
+   needs an explicit export otherwise the symbol doesn't get exported. See the
+   note about SFINAE mangling in the header, tho. */
 template<> template<> CORRADE_UTILITY_EXPORT BasicStringView<const char>::BasicStringView(const String& string) noexcept: BasicStringView{string.data(), string.size(), string.viewFlags()} {}
 
 #ifndef CORRADE_SINGLES_NO_ADVANCED_STRING_APIS
@@ -102,7 +129,8 @@ template<class T> Array<BasicStringView<T>> BasicStringView<T>::splitWithoutEmpt
         T* pos = static_cast<T*>(std::memchr(oldpos, delimiter, end - oldpos));
         /* Not sure why memchr can't just do this, it would make much more
            sense */
-        if(!pos) pos = end;
+        if(!pos)
+            pos = end;
 
         if(pos != oldpos)
             arrayAppend(parts, slice(oldpos, pos));
@@ -124,7 +152,8 @@ const char* stringFindString(const char* data, const std::size_t size, const cha
            potential "this is UB so I can whatever YOLO!" misoptimizations and
            implementation differences when calling memcmp() with zero size and
            potentially null pointers also. */
-        if(!size) return data;
+        if(!size)
+            return data;
 
         /* Otherwise compare it with the string at all possible positions in
            the string until we have a match. */
@@ -172,7 +201,8 @@ const char* stringFindLastString(const char* const data, const std::size_t size,
            potential "this is UB so I can whatever YOLO!" misoptimizations and
            implementation differences when calling memcmp() with zero size and
            potentially null pointers also. */
-        if(!size) return data;
+        if(!size)
+            return data;
 
         /* Otherwise compare it with the string at all possible positions in
            the string until we have a match. */
@@ -458,7 +488,8 @@ CORRADE_UTILITY_CPU_MAYBE_UNUSED CORRADE_ENABLE(NEON) typename std::decay<declty
     /** @todo investigate why */
     if(size < 16) {
         for(const char* i = data; i != end; ++i)
-            if(*i == character) return i;
+            if(*i == character)
+                return i;
         return static_cast<const char*>(nullptr);
     }
 
@@ -512,7 +543,19 @@ CORRADE_UTILITY_CPU_MAYBE_UNUSED CORRADE_ENABLE(NEON) typename std::decay<declty
         const uint16x8_t eq16 = vreinterpretq_u16_u8(vceqq_u8(chunk, vn1));
         const uint64x1_t shrn64 = vreinterpret_u64_u8(vshrn_n_u16(eq16, 4));
         if(const uint64_t mask = vget_lane_u64(shrn64, 0))
-            return data + (__builtin_ctzll(mask) >> 2);
+            return data +
+                /* https://learn.microsoft.com/en-us/cpp/intrinsics/arm64-intrinsics
+                   which hopefully just compiles down to the clz instruction.
+                   Clang has only _CountLeadingZeros64() and only since version
+                   18 (https://github.com/llvm/llvm-project/pull/66554), so
+                   keeping to use the GCC builtin there (which is documented to
+                   be undefined for 0, but again hoping it just compiles to clz
+                   which is well-defined for 0). */
+                #if defined(CORRADE_TARGET_MSVC) && !defined(CORRADE_TARGET_CLANG)
+                (_CountTrailingZeros64(mask) >> 2);
+                #else
+                (__builtin_ctzll(mask) >> 2);
+                #endif
     }
 
     /* Go to the next aligned position. If the pointer was already aligned,
@@ -553,13 +596,33 @@ CORRADE_UTILITY_CPU_MAYBE_UNUSED CORRADE_ENABLE(NEON) typename std::decay<declty
            add instead of three ORs and a horizontal add */
         if(vaddvq_u8(vorrq_u8(maskAB, maskCD))) {
             if(const std::uint64_t mask = vgetq_lane_u64(vreinterpretq_u64_u8(maskAB), 0))
-                return i + 0*16 + (__builtin_ctzll(mask) >> 2);
+                return i + 0*16 + /* The clz instruction, see comment above */
+                    #if defined(CORRADE_TARGET_MSVC) && !defined(CORRADE_TARGET_CLANG)
+                    (_CountTrailingZeros64(mask) >> 2);
+                    #else
+                    (__builtin_ctzll(mask) >> 2);
+                    #endif
             if(const std::uint64_t mask = vgetq_lane_u64(vreinterpretq_u64_u8(maskAB), 1))
-                return i + 1*16 + (__builtin_ctzll(mask) >> 2);
+                return i + 1*16 +  /* The clz instruction, see comment above */
+                    #if defined(CORRADE_TARGET_MSVC) && !defined(CORRADE_TARGET_CLANG)
+                    (_CountTrailingZeros64(mask) >> 2);
+                    #else
+                    (__builtin_ctzll(mask) >> 2);
+                    #endif
             if(const std::uint64_t mask = vgetq_lane_u64(vreinterpretq_u64_u8(maskCD), 0))
-                return i + 2*16 + (__builtin_ctzll(mask) >> 2);
+                return i + 2*16 +  /* The clz instruction, see comment above */
+                    #if defined(CORRADE_TARGET_MSVC) && !defined(CORRADE_TARGET_CLANG)
+                    (_CountTrailingZeros64(mask) >> 2);
+                    #else
+                    (__builtin_ctzll(mask) >> 2);
+                    #endif
             if(const std::uint64_t mask = vgetq_lane_u64(vreinterpretq_u64_u8(maskCD), 1))
-                return i + 3*16 + (__builtin_ctzll(mask) >> 2);
+                return i + 3*16 +  /* The clz instruction, see comment above */
+                    #if defined(CORRADE_TARGET_MSVC) && !defined(CORRADE_TARGET_CLANG)
+                    (_CountTrailingZeros64(mask) >> 2);
+                    #else
+                    (__builtin_ctzll(mask) >> 2);
+                    #endif
             CORRADE_INTERNAL_DEBUG_ASSERT_UNREACHABLE(); /* LCOV_EXCL_LINE */
         }
     }
@@ -570,7 +633,12 @@ CORRADE_UTILITY_CPU_MAYBE_UNUSED CORRADE_ENABLE(NEON) typename std::decay<declty
         const uint16x8_t eq16 = vreinterpretq_u16_u8(vceqq_u8(chunk, vn1));
         const uint64x1_t shrn64 = vreinterpret_u64_u8(vshrn_n_u16(eq16, 4));
         if(const uint64_t mask = vget_lane_u64(shrn64, 0))
-            return i + (__builtin_ctzll(mask) >> 2);
+            return i +  /* The clz instruction, see comment above */
+                #if defined(CORRADE_TARGET_MSVC) && !defined(CORRADE_TARGET_CLANG)
+                (_CountTrailingZeros64(mask) >> 2);
+                #else
+                (__builtin_ctzll(mask) >> 2);
+                #endif
     }
 
     /* Handle remaining less than a vector with an unaligned search, again
@@ -582,7 +650,12 @@ CORRADE_UTILITY_CPU_MAYBE_UNUSED CORRADE_ENABLE(NEON) typename std::decay<declty
         const uint16x8_t eq16 = vreinterpretq_u16_u8(vceqq_u8(chunk, vn1));
         const uint64x1_t shrn64 = vreinterpret_u64_u8(vshrn_n_u16(eq16, 4));
         if(const uint64_t mask = vget_lane_u64(shrn64, 0))
-            return i + (__builtin_ctzll(mask) >> 2);
+            return i +  /* The clz instruction, see comment above */
+                #if defined(CORRADE_TARGET_MSVC) && !defined(CORRADE_TARGET_CLANG)
+                (_CountTrailingZeros64(mask) >> 2);
+                #else
+                (__builtin_ctzll(mask) >> 2);
+                #endif
     }
 
     return static_cast<const char*>(nullptr);
@@ -732,7 +805,8 @@ const char* stringFindLastCharacter(const char* const data, const std::size_t si
        allowed or not ... haha, well, except that if data is nullptr,
        `*(data - 1)` blows up, so I actually need to. */
     if(data) for(const char* i = data + size - 1; i >= data; --i)
-        if(*i == character) return i;
+        if(*i == character)
+            return i;
     return {};
 }
 
@@ -759,7 +833,8 @@ const char* stringFindLastCharacter(const char* const data, const std::size_t si
    but I'd first need to allocate to make use of that and FUCK NO. */
 const char* stringFindAny(const char* const data, const std::size_t size, const char* const characters, const std::size_t characterCount) {
     for(const char* i = data, *end = data + size; i != end; ++i)
-        if(std::memchr(characters, *i, characterCount)) return i;
+        if(std::memchr(characters, *i, characterCount))
+            return i;
     return {};
 }
 
@@ -768,19 +843,22 @@ const char* stringFindAny(const char* const data, const std::size_t size, const 
 
 const char* stringFindLastAny(const char* const data, const std::size_t size, const char* const characters, const std::size_t characterCount) {
     for(const char* i = data + size; i != data; --i)
-        if(std::memchr(characters, *(i - 1), characterCount)) return i - 1;
+        if(std::memchr(characters, *(i - 1), characterCount))
+            return i - 1;
     return {};
 }
 
 const char* stringFindNotAny(const char* const data, const std::size_t size, const char* const characters, const std::size_t characterCount) {
     for(const char* i = data, *end = data + size; i != end; ++i)
-        if(!std::memchr(characters, *i, characterCount)) return i;
+        if(!std::memchr(characters, *i, characterCount))
+            return i;
     return {};
 }
 
 const char* stringFindLastNotAny(const char* const data, const std::size_t size, const char* const characters, const std::size_t characterCount) {
     for(const char* i = data + size; i != data; --i)
-        if(!std::memchr(characters, *(i - 1), characterCount)) return i - 1;
+        if(!std::memchr(characters, *(i - 1), characterCount))
+            return i - 1;
     return {};
 }
 
@@ -1089,7 +1167,8 @@ CORRADE_UTILITY_CPU_MAYBE_UNUSED typename std::decay<decltype(stringCountCharact
   return [](const char* const data, const std::size_t size, const char character) -> std::size_t {
     std::size_t count = 0;
     for(const char* i = data, *end = data + size; i != end; ++i)
-        if(*i == character) ++count;
+        if(*i == character)
+            ++count;
     return count;
   };
 }
@@ -1137,7 +1216,9 @@ template<class T> Array<BasicStringView<T>> BasicStringView<T>::splitWithoutEmpt
 #endif
 
 namespace {
-    /* If I use an externally defined view in splitWithoutEmptyParts(),
+    /* Same as what std::isspace() defines as whitespace:
+        https://en.cppreference.com/cpp/string/byte/isspace
+       If I use an externally defined view in splitWithoutEmptyParts(),
        trimmed() and elsewhere, MSVC (2015, 2017, 2019) will blow up on the
        explicit template instantiation with
 
@@ -1159,6 +1240,11 @@ namespace {
 
 #ifndef CORRADE_SINGLES_NO_ADVANCED_STRING_APIS
 template<class T> Array<BasicStringView<T>> BasicStringView<T>::splitOnWhitespaceWithoutEmptyParts() const {
+    /** @todo instead of doing basically what's an inefficient memchr() in a
+        loop, this could be a customized find2() SIMD algorithm that finds
+        either a space or bytes matching a 0x08 mask in groups of 16/32 and
+        then for the masked checks if it's one of the allowed 6 values;
+        similarly for trimmed() and such */
     #if !defined(CORRADE_TARGET_MSVC) || defined(CORRADE_TARGET_CLANG_CL) || _MSC_VER >= 1930 /* MSVC 2022 works */
     return splitOnAnyWithoutEmptyParts(Whitespace);
     #else
@@ -1234,7 +1320,8 @@ template<> CORRADE_UTILITY_EXPORT String BasicStringView<const char>::join(const
     /* Calculate size of the resulting string including delimiters */
     const std::size_t delimiterSize = size();
     std::size_t totalSize = strings.isEmpty() ? 0 : (strings.size() - 1)*delimiterSize;
-    for(const StringView s: strings) totalSize += s.size();
+    for(const StringView s: strings)
+        totalSize += s.size();
 
     /* Reserve memory for the resulting string */
     String result{Corrade::NoInit, totalSize};
@@ -1276,10 +1363,12 @@ template<> CORRADE_UTILITY_EXPORT String BasicStringView<const char>::joinWithou
     const std::size_t delimiterSize = size();
     std::size_t totalSize = 0;
     for(const StringView string: strings) {
-        if(string.isEmpty()) continue;
+        if(string.isEmpty())
+            continue;
         totalSize += string.size() + delimiterSize;
     }
-    if(totalSize) totalSize -= delimiterSize;
+    if(totalSize)
+        totalSize -= delimiterSize;
 
     /* Reserve memory for the resulting string */
     String result{Corrade::NoInit, totalSize};
@@ -1288,7 +1377,8 @@ template<> CORRADE_UTILITY_EXPORT String BasicStringView<const char>::joinWithou
     char* out = result.data();
     char* const end = out + totalSize;
     for(const StringView string: strings) {
-        if(string.isEmpty()) continue;
+        if(string.isEmpty())
+            continue;
 
         const std::size_t stringSize = string.size();
         /* Apparently memcpy() can't be called with null pointers, even if size
@@ -1319,7 +1409,8 @@ template<> CORRADE_UTILITY_EXPORT String BasicStringView<char>::joinWithoutEmpty
 
 template<class T> bool BasicStringView<T>::hasPrefix(const StringView prefix) const {
     const std::size_t prefixSize = prefix.size();
-    if(size() < prefixSize) return false;
+    if(size() < prefixSize)
+        return false;
 
     return std::memcmp(_data, prefix._data, prefixSize) == 0;
 }
@@ -1332,7 +1423,8 @@ template<class T> bool BasicStringView<T>::hasPrefix(const char prefix) const {
 template<class T> bool BasicStringView<T>::hasSuffix(const StringView suffix) const {
     const std::size_t size = this->size();
     const std::size_t suffixSize = suffix.size();
-    if(size < suffixSize) return false;
+    if(size < suffixSize)
+        return false;
 
     return std::memcmp(_data + size - suffixSize, suffix._data, suffixSize) == 0;
 }
@@ -1420,8 +1512,10 @@ bool operator<(const StringView a, const StringView b) {
     const std::size_t aSize = a._sizePlusFlags & ~Implementation::StringViewSizeMask;
     const std::size_t bSize = b._sizePlusFlags & ~Implementation::StringViewSizeMask;
     const int result = std::memcmp(a._data, b._data, Utility::min(aSize, bSize));
-    if(result != 0) return result < 0;
-    if(aSize < bSize) return true;
+    if(result != 0)
+        return result < 0;
+    if(aSize < bSize)
+        return true;
     return false;
 }
 
@@ -1430,8 +1524,10 @@ bool operator<=(const StringView a, const StringView b) {
     const std::size_t aSize = a._sizePlusFlags & ~Implementation::StringViewSizeMask;
     const std::size_t bSize = b._sizePlusFlags & ~Implementation::StringViewSizeMask;
     const int result = std::memcmp(a._data, b._data, Utility::min(aSize, bSize));
-    if(result != 0) return result < 0;
-    if(aSize <= bSize) return true;
+    if(result != 0)
+        return result < 0;
+    if(aSize <= bSize)
+        return true;
     return false;
 }
 
@@ -1440,8 +1536,10 @@ bool operator>=(const StringView a, const StringView b) {
     const std::size_t aSize = a._sizePlusFlags & ~Implementation::StringViewSizeMask;
     const std::size_t bSize = b._sizePlusFlags & ~Implementation::StringViewSizeMask;
     const int result = std::memcmp(a._data, b._data, Utility::min(aSize, bSize));
-    if(result != 0) return result > 0;
-    if(aSize >= bSize) return true;
+    if(result != 0)
+        return result > 0;
+    if(aSize >= bSize)
+        return true;
     return false;
 }
 
@@ -1450,8 +1548,10 @@ bool operator>(const StringView a, const StringView b) {
     const std::size_t aSize = a._sizePlusFlags & ~Implementation::StringViewSizeMask;
     const std::size_t bSize = b._sizePlusFlags & ~Implementation::StringViewSizeMask;
     const int result = std::memcmp(a._data, b._data, Utility::min(aSize, bSize));
-    if(result != 0) return result > 0;
-    if(aSize > bSize) return true;
+    if(result != 0)
+        return result > 0;
+    if(aSize > bSize)
+        return true;
     return false;
 }
 
@@ -1465,8 +1565,10 @@ String operator+(const StringView a, const StringView b) {
     /* Apparently memcpy() can't be called with null pointers, even if size is
        zero. I call that bullying. */
     char* out = result.data();
-    if(aSize) std::memcpy(out, a._data, aSize);
-    if(bSize) std::memcpy(out + aSize, b._data, bSize);
+    if(aSize)
+        std::memcpy(out, a._data, aSize);
+    if(bSize)
+        std::memcpy(out + aSize, b._data, bSize);
 
     return result;
 }
@@ -1489,29 +1591,6 @@ String operator*(const StringView string, const std::size_t count) {
 String operator*(const std::size_t count, const StringView string) {
     return string*count;
 }
-
-#ifndef CORRADE_SINGLES_NO_DEBUG
-Utility::Debug& operator<<(Utility::Debug& debug, const StringViewFlag value) {
-    debug << "Containers::StringViewFlag" << Utility::Debug::nospace;
-
-    switch(value) {
-        /* LCOV_EXCL_START */
-        #define _c(v) case StringViewFlag::v: return debug << "::" #v;
-        _c(Global)
-        _c(NullTerminated)
-        #undef _c
-        /* LCOV_EXCL_STOP */
-    }
-
-    return debug << "(" << Utility::Debug::nospace << Utility::Debug::hex << std::size_t(value) << Utility::Debug::nospace << ")";
-}
-
-Utility::Debug& operator<<(Utility::Debug& debug, const StringViewFlags value) {
-    return enumSetDebugOutput(debug, value, "Containers::StringViewFlags{}", {
-        StringViewFlag::Global,
-        StringViewFlag::NullTerminated});
-}
-#endif
 
 #ifndef CORRADE_SINGLES_NO_ADVANCED_STRING_APIS
 namespace Implementation {

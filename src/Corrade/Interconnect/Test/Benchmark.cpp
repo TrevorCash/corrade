@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -23,6 +23,8 @@
     FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
     DEALINGS IN THE SOFTWARE.
 */
+
+#define _CORRADE_NO_DEPRECATED_INTERCONNECT
 
 #include <functional>
 
@@ -88,6 +90,7 @@ CORRADE_NEVER_INLINE void freeFunctionSlot() {
     ++globalOutput;
 }
 
+CORRADE_IGNORE_DEPRECATED_PUSH
 void Benchmark::connect1kFunctions() {
     struct E: Emitter {
         Signal fire() {
@@ -383,6 +386,7 @@ void Benchmark::call1kSlotMembers() {
 
     CORRADE_COMPARE(receiver.output, 1000*100);
 }
+CORRADE_IGNORE_DEPRECATED_POP
 
 }}}}
 

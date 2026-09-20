@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -41,13 +41,12 @@
 #include "Corrade/Utility/Move.h"
 
 #ifdef CORRADE_BUILD_DEPRECATED
-#include "Corrade/Utility/Macros.h"
+#include "Corrade/Utility/DeprecationMacros.h"
 #endif
 
 namespace Corrade { namespace Containers {
 
 namespace Implementation {
-    template<class, class> struct ArrayViewConverter;
     template<class> struct ErasedArrayViewConverter;
     #ifndef CORRADE_SINGLES_NO_ARRAYTUPLE_COMPATIBILITY
     /* so ArrayTuple can update the data pointer */
@@ -114,7 +113,7 @@ convertible to them:
 @subsection Containers-ArrayView-usage-access Data access
 
 The class provides the usual C++ container interface --- @ref data(),
-@ref size() and @ref isEmpty(); subscript access via @ref operator T*(), range
+@ref size() and @ref isEmpty(); subscript access via @ref operator[](), range
 access via @ref begin() / @ref end(), and their overloads and acess to the
 @ref front() and @ref back() element, if the view is non-empty. The view itself
 is immutable and thus all member functions are @cpp const @ce, but if the
@@ -126,9 +125,9 @@ mutable as well.
 @subsection Containers-ArrayView-usage-slicing View slicing
 
 Except for the usual element access via @ref begin(), @ref end() and
-@ref operator T*() that provides also access via @cpp [] @ce, there's a
-collection of slicing functions --- @ref slice(), @ref sliceSize(),
-@ref prefix(), @ref suffix(), @ref exceptPrefix() and @ref exceptSuffix():
+@ref operator[](), there's a collection of slicing functions --- @ref slice(),
+@ref sliceSize(), @ref prefix(), @ref suffix(), @ref exceptPrefix() and
+@ref exceptSuffix():
 
 @snippet Containers.cpp ArrayView-usage-slicing
 
@@ -218,6 +217,12 @@ Example:
 
 @snippet Containers-stl2a.cpp ArrayView
 
+In all cases above, it's also possible to create an @ref ArrayView "ArrayView<T>"
+instance from a @ref std::array, @ref std::vector or @ref std::span of a type
+derived from `T` if the types have the same size. This basically just expands
+the @ref ArrayView(ArrayView<U>) constructor functionality to external types as
+well.
+
 @anchor Containers-ArrayView-initializer-list
 
 <b></b>
@@ -272,6 +277,13 @@ information.
     as well.
 */
 /* All member functions are const because the view doesn't own the data */
+#if defined(CORRADE_TARGET_GCC) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 16
+/* This supresses a warning when StringView.h is included before ArrayView.h
+   due to ArrayView appearing in a rather nasty SFINAE expression in a
+   StringView constructor. See there for details. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsfinae-incomplete"
+#endif
 template<class T> class ArrayView {
     public:
         typedef T Type;     /**< @brief Element type */
@@ -330,7 +342,7 @@ template<class T> class ArrayView {
             #ifndef DOXYGEN_GENERATING_OUTPUT
             , typename std::enable_if<std::is_convertible<U*, T*>::value, int>::type = 0
             #endif
-        > constexpr /*implicit*/ ArrayView(ArrayView<U> view) noexcept: _data{view}, _size{view.size()} {
+        > constexpr /*implicit*/ ArrayView(ArrayView<U> view) noexcept: _data{view.data()}, _size{view.size()} {
             static_assert(sizeof(T) == sizeof(U), "type sizes are not compatible");
         }
 
@@ -345,7 +357,7 @@ template<class T> class ArrayView {
             #ifndef DOXYGEN_GENERATING_OUTPUT
             , typename std::enable_if<std::is_convertible<U*, T*>::value, int>::type = 0
             #endif
-        > constexpr /*implicit*/ ArrayView(StaticArrayView<size, U> view) noexcept: _data{view}, _size{size} {
+        > constexpr /*implicit*/ ArrayView(StaticArrayView<size, U> view) noexcept: _data{view.data()}, _size{size} {
             static_assert(sizeof(U) == sizeof(T), "type sizes are not compatible");
         }
 
@@ -374,15 +386,33 @@ template<class T> class ArrayView {
             return Implementation::ArrayViewConverter<T, U>::to(*this);
         }
 
-        #ifndef CORRADE_MSVC_COMPATIBILITY
+        #if !defined(CORRADE_MSVC_COMPATIBILITY) || !defined(CORRADE_BUILD_DEPRECATED)
         /** @brief Whether the view is non-empty */
         /* Disabled on MSVC w/o /permissive- to avoid ambiguous operator+()
            when doing pointer arithmetic. */
+        /** @todo remove the ifdef once the operators below are gone */
         constexpr explicit operator bool() const { return _data; }
         #endif
 
-        /** @brief Conversion to the underlying type */
-        constexpr /*implicit*/ operator T*() const { return _data; }
+        #ifdef CORRADE_BUILD_DEPRECATED
+        /**
+         * @brief Conversion to the underlying type
+         * @m_deprecated_since_latest Use @ref data() or @ref begin() instead,
+         *      which conveys the intent clearer than an implicit pointer
+         *      conversion.
+         */
+        constexpr /*implicit*/
+        #ifndef CORRADE_MSVC_COMPATIBILITY
+        /* On MSVC w/o /permissive- boolean conversion has to use operator T*()
+           as well, as operator bool() causes an ambiguity, so the deprecation
+           warning has to be omitted to not produce warning noise for valid
+           usage, sorry. *Please* regularly use at least one other compiler or
+           build with CORRADE_BUILD_DEPRECATED disabled from time to time to
+           catch use of these deprecated APIs in your code. */
+        CORRADE_DEPRECATED("use data() or begin() instead")
+        #endif
+        operator T*() const { return _data; }
+        #endif
 
         /** @brief View data */
         constexpr T* data() const { return _data; }
@@ -429,7 +459,7 @@ template<class T> class ArrayView {
          * @brief First element
          *
          * Expects there is at least one element.
-         * @see @ref begin(), @ref operator[]()
+         * @see @ref isEmpty(), @ref begin(), @ref operator[]()
          */
         constexpr T& front() const;
 
@@ -437,7 +467,7 @@ template<class T> class ArrayView {
          * @brief Last element
          *
          * Expects there is at least one element.
-         * @see @ref end(), @ref operator[]()
+         * @see @ref isEmpty(), @ref end(), @ref operator[]()
          */
         constexpr T& back() const;
 
@@ -674,6 +704,9 @@ template<class T> class ArrayView {
         T* _data;
         std::size_t _size;
 };
+#if defined(CORRADE_TARGET_GCC) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 16
+#pragma GCC diagnostic pop
+#endif
 
 /**
 @brief Void array view
@@ -753,14 +786,14 @@ template<> class ArrayView<void> {
             #ifndef DOXYGEN_GENERATING_OUTPUT
             , typename std::enable_if<!std::is_const<T>::value, int>::type = 0
             #endif
-        > constexpr /*implicit*/ ArrayView(ArrayView<T> array) noexcept: _data(array), _size(array.size()*sizeof(T)) {}
+        > constexpr /*implicit*/ ArrayView(ArrayView<T> array) noexcept: _data(array.data()), _size(array.size()*sizeof(T)) {}
 
         /** @brief Construct a void view on any @ref StaticArrayView */
         template<std::size_t size, class T
             #ifndef DOXYGEN_GENERATING_OUTPUT
             , typename std::enable_if<!std::is_const<T>::value, int>::type = 0
             #endif
-        > constexpr /*implicit*/ ArrayView(const StaticArrayView<size, T>& array) noexcept: _data{array}, _size{size*sizeof(T)} {}
+        > constexpr /*implicit*/ ArrayView(StaticArrayView<size, T> array) noexcept: _data{array.data()}, _size{size*sizeof(T)} {}
 
         /**
          * @brief Construct a view on an external type / from an external representation
@@ -771,17 +804,38 @@ template<> class ArrayView<void> {
            e.g. std::vector<T>&& because that would break uses like
            `consume(foo());`, where `consume()` expects a view but `foo()`
            returns a std::vector. */
-        template<class T, class = decltype(Implementation::ErasedArrayViewConverter<typename std::decay<T&&>::type>::from(std::declval<T&&>()))> constexpr /*implicit*/ ArrayView(T&& other) noexcept: ArrayView{Implementation::ErasedArrayViewConverter<typename std::decay<T&&>::type>::from(other)} {}
+        template<class T, class U = decltype(Implementation::ErasedArrayViewConverter<typename std::decay<T&&>::type>::from(std::declval<T&&>()))
+            #ifndef DOXYGEN_GENERATING_OUTPUT
+            , typename std::enable_if<!std::is_const<typename U::Type>::value, int>::type = 0
+            #endif
+        > constexpr /*implicit*/ ArrayView(T&& other) noexcept: ArrayView{Implementation::ErasedArrayViewConverter<typename std::decay<T&&>::type>::from(other)} {}
 
-        #ifndef CORRADE_MSVC_COMPATIBILITY
+        #if !defined(CORRADE_MSVC_COMPATIBILITY) || !defined(CORRADE_BUILD_DEPRECATED)
         /** @brief Whether the view is non-empty */
         /* Disabled on MSVC w/o /permissive- to avoid ambiguous operator+()
            when doing pointer arithmetic. */
+        /** @todo remove the ifdef once the operators below are gone */
         constexpr explicit operator bool() const { return _data; }
         #endif
 
-        /** @brief Conversion to the underlying type */
-        constexpr /*implicit*/ operator void*() const { return _data; }
+        #ifdef CORRADE_BUILD_DEPRECATED
+        /**
+         * @brief Conversion to the underlying type
+         * @m_deprecated_since_latest Use @ref data() instead, which conveys
+         *      the intent clearer than an implicit pointer conversion.
+         */
+        constexpr /*implicit*/
+        #ifndef CORRADE_MSVC_COMPATIBILITY
+        /* On MSVC w/o /permissive- boolean conversion has to use operator T*()
+           as well, as operator bool() causes an ambiguity, so the deprecation
+           warning has to be omitted to not produce warning noise for valid
+           usage, sorry. *Please* regularly use at least one other compiler or
+           build with CORRADE_BUILD_DEPRECATED disabled from time to time to
+           catch use of these deprecated APIs in your code. */
+        CORRADE_DEPRECATED("use data() instead")
+        #endif
+        operator void*() const { return _data; }
+        #endif
 
         /** @brief View data */
         constexpr void* data() const { return _data; }
@@ -882,13 +936,13 @@ template<> class ArrayView<const void> {
         template<class T, std::size_t size> constexpr /*implicit*/ ArrayView(T(&data)[size]) noexcept: _data(data), _size(size*sizeof(T)) {}
 
         /** @brief Construct a const void view on an @ref ArrayView<void> */
-        constexpr /*implicit*/ ArrayView(ArrayView<void> array) noexcept: _data{array}, _size{array.size()} {}
+        constexpr /*implicit*/ ArrayView(ArrayView<void> array) noexcept: _data{array.data()}, _size{array.size()} {}
 
         /** @brief Construct a const void view on any @ref ArrayView */
-        template<class T> constexpr /*implicit*/ ArrayView(ArrayView<T> array) noexcept: _data(array), _size(array.size()*sizeof(T)) {}
+        template<class T> constexpr /*implicit*/ ArrayView(ArrayView<T> array) noexcept: _data(array.data()), _size(array.size()*sizeof(T)) {}
 
         /** @brief Construct a const void view on any @ref StaticArrayView */
-        template<std::size_t size, class T> constexpr /*implicit*/ ArrayView(const StaticArrayView<size, T>& array) noexcept: _data{array}, _size{size*sizeof(T)} {}
+        template<std::size_t size, class T> constexpr /*implicit*/ ArrayView(StaticArrayView<size, T> array) noexcept: _data{array.data()}, _size{size*sizeof(T)} {}
 
         /**
          * @brief Construct a view on an external type / from an external representation
@@ -901,15 +955,32 @@ template<> class ArrayView<const void> {
            returns a std::vector. */
         template<class T, class = decltype(Implementation::ErasedArrayViewConverter<const T>::from(std::declval<const T&>()))> constexpr /*implicit*/ ArrayView(const T& other) noexcept: ArrayView{Implementation::ErasedArrayViewConverter<const T>::from(other)} {}
 
-        #ifndef CORRADE_MSVC_COMPATIBILITY
+        #if !defined(CORRADE_MSVC_COMPATIBILITY) || !defined(CORRADE_BUILD_DEPRECATED)
         /** @brief Whether the view is non-empty */
         /* Disabled on MSVC w/o /permissive- to avoid ambiguous operator+()
            when doing pointer arithmetic. */
+        /** @todo remove the ifdef once the operators below are gone */
         constexpr explicit operator bool() const { return _data; }
         #endif
 
-        /** @brief Conversion to the underlying type */
-        constexpr /*implicit*/ operator const void*() const { return _data; }
+        #ifdef CORRADE_BUILD_DEPRECATED
+        /**
+         * @brief Conversion to the underlying type
+         * @m_deprecated_since_latest Use @ref data() instead, which conveys
+         *      the intent clearer than an implicit pointer conversion.
+         */
+        constexpr /*implicit*/
+        #ifndef CORRADE_MSVC_COMPATIBILITY
+        /* On MSVC w/o /permissive- boolean conversion has to use operator T*()
+           as well, as operator bool() causes an ambiguity, so the deprecation
+           warning has to be omitted to not produce warning noise for valid
+           usage, sorry. *Please* regularly use at least one other compiler or
+           build with CORRADE_BUILD_DEPRECATED disabled from time to time to
+           catch use of these deprecated APIs in your code. */
+        CORRADE_DEPRECATED("use data() instead")
+        #endif
+        operator const void*() const { return _data; }
+        #endif
 
         /** @brief View data */
         constexpr const void* data() const { return _data; }
@@ -1016,7 +1087,7 @@ template<class T, class U = decltype(Implementation::ErasedArrayViewConverter<ty
 @brief Reinterpret-cast an array view
 
 Size of the new array is calculated as @cpp view.size()*sizeof(T)/sizeof(U) @ce.
-Expects that both types are [standard layout](http://en.cppreference.com/w/cpp/concept/StandardLayoutType)
+Expects that both types are [standard layout](https://en.cppreference.com/w/cpp/named_req/StandardLayoutType.html)
 and the total byte size doesn't change. Example usage:
 
 @snippet Containers.cpp arrayCast
@@ -1037,7 +1108,7 @@ template<class U, class T> ArrayView<U> arrayCast(ArrayView<T> view) {
 @m_since{2020,06}
 
 Size of the new array is calculated as @cpp view.size()/sizeof(U) @ce.
-Expects that the target type is [standard layout](http://en.cppreference.com/w/cpp/concept/StandardLayoutType)
+Expects that the target type is [standard layout](https://en.cppreference.com/w/cpp/named_req/StandardLayoutType.html)
 and the total byte size doesn't change.
 */
 template<class U> ArrayView<U> arrayCast(ArrayView<const void> view) {
@@ -1098,11 +1169,6 @@ you have to form a pointer to a member with @cpp & @ce for this to work:
 */
 template<std::size_t size_, class T, class U> constexpr std::size_t arraySize(U(T::*)[size_]) {
     return size_;
-}
-
-namespace Implementation {
-    template<std::size_t, class, class> struct StaticArrayViewConverter;
-    template<class> struct ErasedStaticArrayViewConverter;
 }
 
 /**
@@ -1223,7 +1289,7 @@ template<std::size_t size_, class T> class StaticArrayView {
             #ifndef DOXYGEN_GENERATING_OUTPUT
             , typename std::enable_if<std::is_convertible<U*, T*>::value, int>::type = 0
             #endif
-        > constexpr /*implicit*/ StaticArrayView(StaticArrayView<size_, U> view) noexcept: _data{view} {
+        > constexpr /*implicit*/ StaticArrayView(StaticArrayView<size_, U> view) noexcept: _data{view.data()} {
             static_assert(sizeof(T) == sizeof(U), "type sizes are not compatible");
         }
 
@@ -1253,15 +1319,33 @@ template<std::size_t size_, class T> class StaticArrayView {
             return Implementation::StaticArrayViewConverter<size_, T, U>::to(*this);
         }
 
-        #ifndef CORRADE_MSVC_COMPATIBILITY
+        #if !defined(CORRADE_MSVC_COMPATIBILITY) || !defined(CORRADE_BUILD_DEPRECATED)
         /** @brief Whether the view is non-empty */
         /* Disabled on MSVC w/o /permissive- to avoid ambiguous operator+()
            when doing pointer arithmetic. */
+        /** @todo remove the ifdef once the operators below are gone */
         constexpr explicit operator bool() const { return _data; }
         #endif
 
-        /** @brief Conversion to the underlying type */
-        constexpr /*implicit*/ operator T*() const { return _data; }
+        #ifdef CORRADE_BUILD_DEPRECATED
+        /**
+         * @brief Conversion to the underlying type
+         * @m_deprecated_since_latest Use @ref data() or @ref begin() instead,
+         *      which conveys the intent clearer than an implicit pointer
+         *      conversion.
+         */
+        constexpr /*implicit*/
+        #ifndef CORRADE_MSVC_COMPATIBILITY
+        /* On MSVC w/o /permissive- boolean conversion has to use operator T*()
+           as well, as operator bool() causes an ambiguity, so the deprecation
+           warning has to be omitted to not produce warning noise for valid
+           usage, sorry. *Please* regularly use at least one other compiler or
+           build with CORRADE_BUILD_DEPRECATED disabled from time to time to
+           catch use of these deprecated APIs in your code. */
+        CORRADE_DEPRECATED("use data() or begin() instead")
+        #endif
+        operator T*() const { return _data; }
+        #endif
 
         /** @brief View data */
         constexpr T* data() const { return _data; }
@@ -1308,7 +1392,7 @@ template<std::size_t size_, class T> class StaticArrayView {
          * @brief First element
          *
          * Expects there is at least one element.
-         * @see @ref begin(), @ref operator[]()
+         * @see @ref isEmpty(), @ref begin(), @ref operator[]()
          */
         constexpr T& front() const;
 
@@ -1316,7 +1400,7 @@ template<std::size_t size_, class T> class StaticArrayView {
          * @brief Last element
          *
          * Expects there is at least one element.
-         * @see @ref end(), @ref operator[]()
+         * @see @ref isEmpty(), @ref end(), @ref operator[]()
          */
         constexpr T& back() const;
 
@@ -1621,7 +1705,7 @@ template<class T, class U = decltype(Implementation::ErasedStaticArrayViewConver
 @brief Reinterpret-cast a static array view
 
 Size of the new array is calculated as @cpp view.size()*sizeof(T)/sizeof(U) @ce.
-Expects that both types are [standard layout](http://en.cppreference.com/w/cpp/concept/StandardLayoutType)
+Expects that both types are [standard layout](https://en.cppreference.com/w/cpp/named_req/StandardLayoutType.html)
 and the total byte size doesn't change. Example usage:
 
 @snippet Containers.cpp arrayCast-StaticArrayView

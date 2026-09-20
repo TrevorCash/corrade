@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -293,7 +293,7 @@ using namespace Containers::Literals::StringLiterals;
 {
 /* [Array-usage] */
 /* Create an array with 5 integers and set them to some value */
-Containers::Array<int> a{5};
+Containers::Array<int> a{ValueInit, 5};
 int b = 0;
 for(auto& i: a) i = b++;        // a == {0, 1, 2, 3, 4}
 
@@ -305,10 +305,6 @@ c[3] = 25;                      // c == {3, 18, -157, 25}
 
 {
 /* [Array-usage-initialization] */
-/* These two are equivalent */
-Containers::Array<int> a1{5};
-Containers::Array<int> a2{ValueInit, 5};
-
 /* Array of 100 integers, uninitialized */
 Containers::Array<int> b{NoInit, 100};
 
@@ -401,7 +397,8 @@ struct Foo {
 Containers::Array<Foo> e{NoInit, 5};
 
 int index = 0;
-for(Foo& f: e) new(&f) Foo{index++};
+for(Foo& f: e)
+    new(&f) Foo{index++};
 /* [Array-NoInit] */
 }
 
@@ -443,7 +440,7 @@ int data1[]{5, 17, -36, 185};
 Containers::ArrayView<int> a = data1;               // a.size() == 4
 
 /* Create a const view on a mutable Array */
-Containers::Array<int> data2{15};
+Containers::Array<int> data2{ValueInit, 15};
 Containers::ArrayView<const int> b = data2;         // b.size() == 15
 
 /* Construct from a pointer and explicit size */
@@ -470,12 +467,14 @@ Containers::ArrayView<int> view = DOXYGEN_ELLIPSIS({});
 
 if(!view.isEmpty()) {
     int min = view.front();
-    for(int i: view) if(i < min) min = i;
+    for(int i: view) if(i < min)
+        min = i;
 
     DOXYGEN_ELLIPSIS(static_cast<void>(min);)
 }
 
-if(view.size() > 2 && view[2] < 3) view[2] += 5;
+if(view.size() > 2 && view[2] < 3)
+    view[2] += 5;
 /* [ArrayView-usage-access] */
 }
 
@@ -498,8 +497,9 @@ static_cast<void>(c);
 static_cast<void>(d);
 
 /* [ArrayView-usage-slicing2] */
-int* end = view;
-while(*end < 25) ++end;
+int* end = view.begin();
+while(*end < 25)
+    ++end;
 Containers::ArrayView<int> numbersLessThan25 = view.prefix(end); // {0, 10, 20}
 
 int* fortyfive = nullptr;
@@ -606,12 +606,12 @@ Containers::ArrayTuple data{
 // Fill the attachment, subpass and dependency info...
 
 VkRenderPassCreateInfo info{DOXYGEN_ELLIPSIS()};
-info.attachmentCount = 3;
-info.pAttachments = attachments;
-info.subpassCount = 2;
-info.pSubpasses = subpasses;
-info.dependencyCount = 7;
-info.pDependencies = dependencies;
+info.attachmentCount = attachments.size();
+info.pAttachments = attachments.data();
+info.subpassCount = subpasses.size();
+info.pSubpasses = subpasses.data();
+info.dependencyCount = dependencies.size();
+info.pDependencies = dependencies.data();
 /* [ArrayTuple-usage] */
 static_cast<void>(info);
 }
@@ -627,7 +627,7 @@ Containers::ArrayTuple data{
 
 /* Initialize all references to point to the strings */
 for(std::size_t i = 0; i != strings.size(); ++i)
-    new(references + i) Containers::Reference<std::string>{strings[i]};
+    new(references.data() + i) Containers::Reference<std::string>{strings[i]};
 /* [ArrayTuple-usage-nontrivial] */
 }
 
@@ -712,7 +712,8 @@ unsigned indexBuffer[5]{};
 /* [BitArray-usage] */
 Containers::BitArray used{ValueInit, vertexCount};
 
-for(unsigned index: indexBuffer) used.set(index);
+for(unsigned index: indexBuffer)
+    used.set(index);
 /* [BitArray-usage] */
 }
 
@@ -1057,7 +1058,7 @@ c[3] = 25;                          // c == {3, 18, -157, 25}
 /* [StaticArray-usage-initialization] */
 /* These two are equivalent */
 Containers::StaticArray<5, int> a1;
-Containers::StaticArray<5, int> a2{DefaultInit};
+Containers::StaticArray<5, int> a2{ValueInit};
 
 /* Array of 100 integers, uninitialized */
 Containers::StaticArray<100, int> b{NoInit};
@@ -1091,7 +1092,8 @@ struct Foo {
 Containers::StaticArray<5, Foo> e{NoInit};
 
 int index = 0;
-for(Foo& f: e) new(&f) Foo{index++};
+for(Foo& f: e)
+    new(&f) Foo{index++};
 /* [StaticArray-NoInit] */
 }
 
@@ -1151,7 +1153,8 @@ Containers::StridedArrayView1D<float> horizontalPositions{positions,
     &positions[0].x, Containers::arraySize(positions), sizeof(Position)};
 
 /* Move to the right */
-for(float& x: horizontalPositions) x += 3.0f;
+for(float& x: horizontalPositions)
+    x += 3.0f;
 /* [StridedArrayView-usage] */
 }
 

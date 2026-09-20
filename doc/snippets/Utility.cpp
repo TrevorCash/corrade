@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -31,6 +31,7 @@
 #include <sstream>
 
 #include "Corrade/Containers/Array.h"
+#include "Corrade/Containers/BitArray.h"
 #include "Corrade/Containers/GrowableArray.h"
 #include "Corrade/Containers/Optional.h"
 #include "Corrade/Containers/Pair.h"
@@ -42,6 +43,7 @@
 #include "Corrade/Utility/Assert.h"
 #include "Corrade/Utility/Configuration.h"
 #include "Corrade/Utility/DebugStl.h"
+#include "Corrade/Utility/DeprecationMacros.h"
 #include "Corrade/Utility/Endianness.h"
 #if defined(CORRADE_TARGET_UNIX) || (defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_TARGET_WINDOWS_RT)) || defined(CORRADE_TARGET_EMSCRIPTEN)
 #include "Corrade/Utility/FileWatcher.h"
@@ -56,6 +58,7 @@
 #include "Corrade/Utility/Resource.h"
 #include "Corrade/Utility/Sha1.h"
 #include "Corrade/Utility/StlMath.h"
+#include "Corrade/Utility/String.h"
 
 #define DOXYGEN_ELLIPSIS(...) __VA_ARGS__
 
@@ -432,7 +435,8 @@ struct Foo {
 Containers::Array<Foo> data = Utility::allocateAligned<Foo>(NoInit, 5);
 
 int index = 0;
-for(Foo& f: data) new(&f) Foo{index++};
+for(Foo& f: data)
+    new(&f) Foo{index++};
 /* [allocateAligned-NoInit] */
 }
 
@@ -581,7 +585,8 @@ Utility::Debug{} << "this has default color";
 
 {
     Utility::Debug d;
-    if(errorHappened) d << Utility::Debug::color(Utility::Debug::Color::Red);
+    if(errorHappened)
+        d << Utility::Debug::color(Utility::Debug::Color::Red);
 
     Utility::Debug{} << "if an error happened, this will be printed red";
     Utility::Debug{} << "this also"
@@ -779,7 +784,7 @@ Containers::Optional<Utility::Json> gltf =
 if(!gltf)
     Utility::Fatal{} << "Whoops!";
 
-const Utility::JsonToken& gltfNode = gltf->root()["nodes"][i];
+Utility::JsonToken gltfNode = gltf->root()["nodes"][i];
 Utility::Debug{}
     << "Node" << i << "is named" << gltfNode["name"].asString()
     << "and has a mesh" << gltfNode["mesh"].asFloat();
@@ -790,14 +795,14 @@ Utility::Debug{}
 Containers::Optional<Utility::Json> gltf;
 std::size_t i{};
 /* [Json-usage-find] */
-const Utility::JsonToken *gltfNodes, *gltfNode;
+Utility::JsonIterator gltfNodes, gltfNode;
 if(!(gltfNodes = gltf->root().find("nodes")) || !(gltfNode = gltfNodes->find(i)))
     Utility::Fatal{} << "Node" << i << "is not in the file";
 
-if(const Utility::JsonToken* gltfName = gltfNode->find("name"))
+if(Utility::JsonIterator gltfName = gltfNode->find("name"))
     Utility::Debug{} << "Node" << i << "is named" << gltfName->asString();
 
-if(const Utility::JsonToken* gltfMesh = gltfNode->find("mesh"))
+if(Utility::JsonIterator gltfMesh = gltfNode->find("mesh"))
     Utility::Debug{} << "Node" << i << "has a mesh" << gltfMesh->asFloat();
 /* [Json-usage-find] */
 }
@@ -809,13 +814,13 @@ Containers::Optional<Utility::Json> gltf = Utility::Json::fromFile("scene.gltf",
     Utility::Json::Option::ParseLiterals|
     Utility::Json::Option::ParseStringKeys);
 
-const Utility::JsonToken* gltfNode = DOXYGEN_ELLIPSIS({});
+Utility::JsonIterator gltfNode = DOXYGEN_ELLIPSIS({});
 if(!gltfNode || !gltf->parseStrings(*gltfNode) || !gltf->parseFloats(*gltfNode))
     Utility::Fatal{} << "Invalid node" << i;
 /* [Json-usage-selective-parsing] */
 
 /* [Json-usage-selective-parsing-numeric-types] */
-if(const Utility::JsonToken* gltfMesh = gltfNode->find("mesh")) {
+if(Utility::JsonIterator gltfMesh = gltfNode->find("mesh")) {
     if(!gltf->parseUnsignedInts(*gltfMesh))
         Utility::Fatal{} << "Invalid node" << i << "mesh reference";
 
@@ -832,22 +837,22 @@ Containers::Optional<Utility::Json> gltf = Utility::Json::fromFile("scene.gltf")
 if(!gltf->parseObject(gltf->root()))
     Utility::Fatal{} << "Can't parse glTF root";
 
-const Utility::JsonToken* gltfNodes = gltf->root().find("nodes");
+Utility::JsonIterator gltfNodes = gltf->root().find("nodes");
 if(!gltfNodes || !gltf->parseArray(*gltfNodes))
     Utility::Fatal{} << "Missing or invalid nodes array";
 
-const Utility::JsonToken* gltfNode = gltfNodes->find(i);
+Utility::JsonIterator gltfNode = gltfNodes->find(i);
 if(!gltfNode || !gltf->parseObject(*gltfNode))
     Utility::Fatal{} << "Missing or invalid node" << i;
 
-if(const Utility::JsonToken* gltfName = gltfNode->find("name")) {
+if(Utility::JsonIterator gltfName = gltfNode->find("name")) {
     if(Containers::Optional<Containers::StringView> s = gltf->parseString(*gltfName))
         Utility::Debug{} << "Node" << i << "is named" << *s;
     else
         Utility::Fatal{} << "Invalid node" << i << "name";
 }
 
-if(const Utility::JsonToken* gltfMesh = gltfNode->find("mesh")) {
+if(Utility::JsonIterator gltfMesh = gltfNode->find("mesh")) {
     if(Containers::Optional<unsigned> n = gltf->parseUnsignedInt(*gltfMesh))
         Utility::Debug{} << "Node" << i << "has a mesh" << *n;
     else
@@ -857,7 +862,7 @@ if(const Utility::JsonToken* gltfMesh = gltfNode->find("mesh")) {
 }
 
 {
-const Utility::JsonToken *gltfNodes{};
+Utility::JsonIterator gltfNodes;
 /* [Json-usage-iteration] */
 struct Node {
     Containers::StringView name;
@@ -883,30 +888,104 @@ for(Utility::JsonArrayItem gltfNode: gltfNodes->asArray()) {
 }
 
 {
-const Utility::JsonToken *gltfNodes{};
+Utility::JsonIterator gltfNodes;
 /* [Json-usage-iteration-values] */
 Containers::Array<Containers::Reference<const Utility::JsonToken>> gltfNodeMap;
-for(const Utility::JsonToken& gltfNode: gltfNodes->asArray())
+for(Utility::JsonToken gltfNode: gltfNodes->asArray())
     arrayAppend(gltfNodeMap, gltfNode);
 /* [Json-usage-iteration-values] */
 }
 
 {
 Containers::Optional<Utility::Json> gltf;
-const Utility::JsonToken& gltfNode = gltf->root();
+Utility::JsonToken gltfNode = gltf->root();
 /* [Json-usage-direct-array-access] */
 Containers::Optional<Containers::StridedArrayView1D<const float>> translation;
-if(const Utility::JsonToken* gltfNodeTranslation = gltfNode.find("translation"))
+if(Utility::JsonIterator gltfNodeTranslation = gltfNode.find("translation"))
     if(!(translation = gltf->parseFloatArray(*gltfNodeTranslation, 3)))
         Utility::Fatal{} << "Node translation is not a 3-component float vector";
 
 Containers::Optional<Containers::StridedArrayView1D<const unsigned>> children;
-if(const Utility::JsonToken* gltfNodeChildren = gltfNode.find("children"))
+if(Utility::JsonIterator gltfNodeChildren = gltfNode.find("children"))
     if(!(children = gltf->parseUnsignedIntArray(*gltfNodeChildren)))
         Utility::Fatal{} << "Node children is not an index list";
 
 // use the translation and children arrays …
 /* [Json-usage-direct-array-access] */
+}
+
+{
+/* [Json-from-tokens] */
+Utility::Json json{
+    /*  1           13            28                   */
+    R"({"negative": -1.5, string: "hello", hex: 0xcafe})",
+    {InPlaceInit, {
+        /* An object with 6 tokens inside, i.e. all remaining ones */
+        Utility::JsonTokenData{Utility::JsonToken::Type::Object, 6},
+        /* A key referenced directly from the input at byte 1. The `true`
+           distinguishes between a string key and a value. */
+        Utility::JsonTokenData{Utility::JsonToken::Type::String,
+            ~std::uint64_t{}, true},
+        /* Parsed float value, referencing the input at byte 13 */
+        Utility::JsonTokenData{-1.5f},
+        /* JSON5 allows keys without quotes so this cannot reference the input,
+           instead it points to a parsed string at position 0 */
+        Utility::JsonTokenData{Utility::JsonToken::Type::String, 0, true},
+        /* Quoted string value (not a key and thus no `true`), referencing the
+           input at position 28 */
+        Utility::JsonTokenData{Utility::JsonToken::Type::String,
+            ~std::uint64_t{}},
+        /* Another unquoted key, referencing a parsed string at position 1 */
+        Utility::JsonTokenData{Utility::JsonToken::Type::String, 1, true},
+        /* Parsed hexadecimal value, not referencing the input because a
+           hexadecimal number is not a valid JSON */
+        Utility::JsonTokenData{0xcafe},
+    }},
+    {InPlaceInit, {
+        {},
+        {1, 10}, /* "negative" */
+        {13, 4}, /* -1.5 */
+        {},
+        {28, 7}, /* "hello" */
+        {},
+        {},
+    }},
+    {InPlaceInit, {
+        "string",
+        "hex"
+    }}};
+/* [Json-from-tokens] */
+
+/* [Json-from-tokens-access] */
+Utility::Debug{} << json.root()["negative"].asFloat();  // prints 1.5
+Utility::Debug{} << json.root()["string"].asString();   // prints hello
+/* [Json-from-tokens-access] */
+}
+
+{
+/* [Json-from-tokens-alone] */
+Utility::Json json{{},
+    {InPlaceInit, {
+        Utility::JsonTokenData{Utility::JsonToken::Type::Object, 6},
+        Utility::JsonTokenData{Utility::JsonToken::Type::String, 0, true},
+        Utility::JsonTokenData{-1.5f},
+        Utility::JsonTokenData{Utility::JsonToken::Type::String, 1, true},
+        Utility::JsonTokenData{Utility::JsonToken::Type::String, 2},
+        Utility::JsonTokenData{Utility::JsonToken::Type::String, 3, true},
+        Utility::JsonTokenData{0xcafe},
+    }},
+    {InPlaceInit, {
+        /* There's no input string so no tokens reference anything in it */
+        {}, {}, {}, {}, {}, {}, {},
+    }},
+    {InPlaceInit, {
+        "negative",
+        "string",
+        "hello",
+        "hex"
+    }}};
+/* [Json-from-tokens-alone] */
+
 }
 
 {
@@ -992,8 +1071,10 @@ Utility::JsonWriter gltfNodes{
 
 for(const Mesh& mesh: meshes) {
     /* Open the mesh and node arrays if they're empty */
-    if(gltfMeshes.isEmpty()) gltfMeshes.beginArray();
-    if(gltfNodes.isEmpty()) gltfNodes.beginArray();
+    if(gltfMeshes.isEmpty())
+        gltfMeshes.beginArray();
+    if(gltfNodes.isEmpty())
+        gltfNodes.beginArray();
 
     std::size_t gltfMeshId = gltfMeshes.currentArraySize();
     Containers::ScopeGuard gltfMesh = gltfMeshes.beginObjectScope();
@@ -1027,6 +1108,19 @@ gltf.endObject();
 }
 
 {
+/* [JsonWriter-tokens] */
+Containers::Optional<Utility::Json> json = Utility::Json::fromFile(DOXYGEN_ELLIPSIS({}));
+
+/* Wrap and indent the input with two spaces */
+Utility::JsonWriter writer{
+    Utility::JsonWriter::Option::Wrap|
+    Utility::JsonWriter::Option::TypographicalSpace, 2};
+writer.writeJson(json->root());
+writer.toFile(DOXYGEN_ELLIPSIS({}));
+/* [JsonWriter-tokens] */
+}
+
+{
 int a = 2;
 int d[5]{};
 int e[5]{};
@@ -1044,11 +1138,10 @@ switch(a) {
 
 {
 std::size_t size{};
-/** @todo use Containers::BoolArray once it exists */
 /* [CORRADE_LIKELY] */
 float* in = DOXYGEN_ELLIPSIS(nullptr);
 float* out = DOXYGEN_ELLIPSIS(nullptr);
-std::vector<bool> mask = DOXYGEN_ELLIPSIS({});
+Containers::BitArray mask = DOXYGEN_ELLIPSIS({});
 for(std::size_t i = 0; i != size; ++i) {
     if CORRADE_LIKELY(mask[i]) {
         out[i] = in[i];
@@ -1134,6 +1227,149 @@ Utility::Resource rs{"game-data"};
 Containers::StringView licenseText = rs.getString("license.txt");
 /* [Resource-override] */
 static_cast<void>(licenseText);
+}
+
+{
+/* [ParseResult-enum-conversion] */
+std::int32_t value;
+if(Utility::String::parseDecimal(DOXYGEN_ELLIPSIS(""), value) !=
+   Utility::String::ParseState::Failed)
+{
+    DOXYGEN_ELLIPSIS()
+}
+/* [ParseResult-enum-conversion] */
+}
+
+{
+/* [parseDecimal-unsigned] */
+std::uint32_t value;
+Utility::String::ParseResult result = Utility::String::parseDecimal(DOXYGEN_ELLIPSIS(""), value);
+if(result == Utility::String::ParseState::Failed) {
+    // handle a parsing failure ...
+} else if(result == Utility::String::ParseState::Clamped) {
+    // handle value out of bounds ...
+} else {
+    // handle success ...
+}
+/* [parseDecimal-unsigned] */
+}
+
+{
+Containers::StringView string;
+/* [parseDecimal-unsigned-trimmed] */
+std::uint32_t value;
+if(Utility::String::parseDecimal(string.trimmed(), value) !=
+   Utility::String::ParseState::Failed)
+{
+    DOXYGEN_ELLIPSIS()
+}
+/* [parseDecimal-unsigned-trimmed] */
+}
+
+{
+/* [parseDecimal-signed] */
+std::int32_t value;
+Utility::String::ParseResult result = Utility::String::parseDecimal(DOXYGEN_ELLIPSIS(""), value);
+if(result == Utility::String::ParseState::Failed) {
+    // handle a parsing failure ...
+} else if(result == Utility::String::ParseState::Clamped) {
+    // handle value out of bounds ...
+} else {
+    // handle success ...
+}
+/* [parseDecimal-signed] */
+}
+
+{
+Containers::StringView string;
+/* [parseDecimal-signed-trimmed] */
+std::int32_t value;
+if(Utility::String::parseDecimal(string.trimmed(), value) !=
+   Utility::String::ParseState::Failed)
+{
+    DOXYGEN_ELLIPSIS()
+}
+/* [parseDecimal-signed-trimmed] */
+}
+
+{
+/* [parseHexadecimal-unsigned] */
+std::uint32_t value;
+Utility::String::ParseResult result = Utility::String::parseHexadecimal(DOXYGEN_ELLIPSIS(""), value,
+    Utility::String::ParseHexadecimalFlag::AllowBasePrefix);
+if(result == Utility::String::ParseState::Failed) {
+    // handle a parsing failure ...
+} else if(result == Utility::String::ParseState::Clamped) {
+    // handle value out of bounds ...
+} else {
+    // handle success ...
+}
+/* [parseHexadecimal-unsigned] */
+}
+
+{
+Containers::StringView string;
+/* [parseHexadecimal-unsigned-trimmed] */
+std::uint32_t value;
+if(Utility::String::parseHexadecimal(string.trimmed(), value) !=
+   Utility::String::ParseState::Failed)
+{
+    DOXYGEN_ELLIPSIS()
+}
+/* [parseHexadecimal-unsigned-trimmed] */
+}
+
+{
+/* [parseHexadecimal-signed] */
+std::int32_t value;
+Utility::String::ParseResult result = Utility::String::parseHexadecimal(DOXYGEN_ELLIPSIS(""), value,
+    Utility::String::ParseHexadecimalFlag::AllowBasePrefix);
+if(result == Utility::String::ParseState::Failed) {
+    // handle a parsing failure ...
+} else if(result == Utility::String::ParseState::Clamped) {
+    // handle value out of bounds ...
+} else {
+    // handle success ...
+}
+/* [parseHexadecimal-signed] */
+}
+
+{
+Containers::StringView string;
+/* [parseHexadecimal-signed-trimmed] */
+std::int32_t value;
+if(Utility::String::parseHexadecimal(string.trimmed(), value) !=
+   Utility::String::ParseState::Failed)
+{
+    DOXYGEN_ELLIPSIS()
+}
+/* [parseHexadecimal-signed-trimmed] */
+}
+
+{
+/* [parseFloat] */
+float value;
+Utility::String::ParseResult result = Utility::String::parseFloat(DOXYGEN_ELLIPSIS(""), value);
+if(result == Utility::String::ParseState::Failed) {
+    // handle a parsing failure ...
+} else if(result == Utility::String::ParseState::Clamped) {
+    // handle value out of bounds ...
+} else {
+    // handle success ...
+}
+/* [parseFloat] */
+}
+
+{
+Containers::StringView string;
+/* [parseFloat-trimmed] */
+float value;
+if(Utility::String::parseFloat(string.trimmed(), value) !=
+   Utility::String::ParseState::Failed)
+{
+    DOXYGEN_ELLIPSIS()
+}
+/* [parseFloat-trimmed] */
 }
 
 {
@@ -1285,6 +1521,11 @@ int foo(int a, CORRADE_UNUSED int b) {
 }
 /* [CORRADE_UNUSED] */
 
+/* [CORRADE_NODISCARD] */
+CORRADE_NODISCARD("file needs closing after") std::FILE*
+    openFile(Containers::StringView name);
+/* [CORRADE_NODISCARD] */
+
 /* [CORRADE_ALWAYS_INLINE] */
 CORRADE_ALWAYS_INLINE int addOne(int a);
 /* [CORRADE_ALWAYS_INLINE] */
@@ -1337,3 +1578,44 @@ class MYLIBRARY_EXPORT ExportedClass {
 };
 /* [CORRADE_VISIBILITY_INLINE_MEMBER_EXPORT] */
 }
+
+/* These are placed at the very end to not have the redefinitions mess with
+   assertion macros by accident */
+#undef CORRADE_ASSERT_ABORT
+/* The header is included above already, doing it a second time should be a
+   no-op */
+/* [CORRADE_ASSERT_ABORT] */
+/* Define before including Assert.h, either directly or transitively */
+#define CORRADE_ASSERT_ABORT() abortWithBacktrace()
+#include <Corrade/Utility/Assert.h>
+
+/* Include all definitions required by the macro after */
+[[noreturn]] void abortWithBacktrace();
+/* [CORRADE_ASSERT_ABORT] */
+#undef CORRADE_ASSERT_ABORT
+#define CORRADE_ASSERT_ABORT() std::abort()
+
+#undef CORRADE_ASSERT_MESSAGE_ABORT
+/* The header is included above already, doing it a second time should be a
+   no-op */
+/* [CORRADE_ASSERT_MESSAGE_ABORT] */
+/* Define before including Assert.h, either directly or transitively */
+#define CORRADE_ASSERT_MESSAGE_ABORT(...)                                   \
+    Corrade::Containers::String out;                                        \
+    Corrade::Utility::Error{&out, Corrade::Utility::Error::Flag::NoNewlineAtTheEnd} \
+        << __VA_ARGS__;                                                     \
+    logAndReportAssertion(out.data());                                      \
+    Corrade::Utility::Error{Corrade::Utility::Error::defaultOutput()} << out; \
+    CORRADE_ASSERT_ABORT();
+#include <Corrade/Utility/Assert.h>
+
+/* Include all definitions required by the macro after */
+#include <Corrade/Containers/String.h>
+#include <Corrade/Utility/Debug.h>
+
+void logAndReportAssertion(const char* message);
+/* [CORRADE_ASSERT_MESSAGE_ABORT] */
+#undef CORRADE_ASSERT_MESSAGE_ABORT
+#define CORRADE_ASSERT_MESSAGE_ABORT(...)                                   \
+    Corrade::Utility::Error{Corrade::Utility::Error::defaultOutput()} << __VA_ARGS__; \
+    CORRADE_ASSERT_ABORT();

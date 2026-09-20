@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -86,7 +86,8 @@ template<> struct Formatter<std::string> {
 
 inline std::size_t formatFormatters(std::string& buffer, std::size_t offset, const char* format, BufferFormatter* formatters, std::size_t formatterCount) {
     const std::size_t size = formatFormatters(nullptr, format, formatters, formatterCount);
-    if(buffer.size() < offset + size) buffer.resize(offset + size);
+    if(buffer.size() < offset + size)
+        buffer.resize(offset + size);
     /* Under C++11, the character storage always includes the null terminator
        and printf() always wants to print the null terminator, so allow it */
     return offset + formatFormatters({&buffer[offset], buffer.size() + 1}, format, formatters, formatterCount);

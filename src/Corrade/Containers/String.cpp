@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -103,18 +103,18 @@ inline void String::construct(const char* const data, const std::size_t size) {
     if(size < Implementation::SmallStringSize) {
         /* Apparently memcpy() can't be called with null pointers, even if size
            is zero. I call that bullying. */
-        if(size) std::memcpy(_small.data, data, size);
+        if(size)
+            std::memcpy(_small.data, data, size);
 
     /* Otherwise allocate. Assuming the size is small enough -- this should
        have been checked in the caller already. */
-    } else {
-        std::memcpy(_large.data, data, size);
-    }
+    } else std::memcpy(_large.data, data, size);
 }
 
 inline void String::destruct() {
     /* If not SSO, delete the data */
-    if(_small.size & Implementation::SmallStringBit) return;
+    if(_small.size & Implementation::SmallStringBit)
+        return;
     /* Instances created with a custom deleter either don't the Global bit set
        at all, or have it set but the deleter is a no-op passed from
        nullTerminatedView() / nullTerminatedGlobalView(). Thus *technically*
@@ -189,18 +189,23 @@ String::String(AllocatedInitT, const char* const data, const std::size_t size)
     : _large{}
     #endif
 {
+    #ifdef CORRADE_TARGET_32BIT
     /* Compared to StringView construction which happens a lot this shouldn't,
        and the chance of strings > 1 GB on 32-bit is rare but possible and thus
-       worth checking even in release */
+       worth checking even in release. OTOH it makes little sense to test for
+       this on 64-bit, if 64-bit code happens to go over then it's got bigger
+       problems than this assert. */
     CORRADE_ASSERT(size < std::size_t{1} << (sizeof(std::size_t)*8 - 2),
         "Containers::String: string expected to be smaller than 2^" << Utility::Debug::nospace << sizeof(std::size_t)*8 - 2 << "bytes, got" << size, );
+    #endif
     CORRADE_ASSERT(data || !size,
         "Containers::String: received a null string of size" << size, );
 
     _large.data = new char[size + 1];
     /* Apparently memcpy() can't be called with null pointers, even if size is
        zero. I call that bullying. */
-    if(size) std::memcpy(_large.data, data, size);
+    if(size)
+        std::memcpy(_large.data, data, size);
     _large.data[size] = '\0';
     _large.size = size;
     _large.deleter = nullptr;
@@ -245,12 +250,21 @@ String::String(char* const data, const std::size_t size, void(*deleter)(char*, s
     : _large{}
     #endif
 {
+    #ifdef CORRADE_TARGET_32BIT
     /* Compared to StringView construction which happens a lot this shouldn't,
        the chance of strings > 1 GB on 32-bit is rare but possible and thus
-       worth checking even in release; but most importantly checking for null
-       termination outweighs potential speed issues */
+       worth checking even in release. OTOH it makes little sense to test for
+       this on 64-bit, if 64-bit code happens to go over then it's got bigger
+       problems than this assert. But most importantly checking for null
+       termination outweighs potential speed issues. */
     CORRADE_ASSERT(size < std::size_t{1} << (sizeof(std::size_t)*8 - 2),
         "Containers::String: string expected to be smaller than 2^" << Utility::Debug::nospace << sizeof(std::size_t)*8 - 2 << "bytes, got" << size, );
+    #endif
+    /* This *may* cause a potential OOB access if the string is not actually
+       null-terminated, OTOH not checking for this would just defer the problem
+       to a point where it'd cause something a lot nastier. Same check
+       (although debug-only) is in the StringView data + size + flags
+       constructor. */
     CORRADE_ASSERT(data && !data[size],
         "Containers::String: can only take ownership of a non-null null-terminated array", );
 
@@ -272,11 +286,15 @@ String::String(void(*deleter)(char*, std::size_t), std::nullptr_t, char* const d
 } {}
 
 String::String(Corrade::ValueInitT, const std::size_t size): _large{} {
+    #ifdef CORRADE_TARGET_32BIT
     /* Compared to StringView construction which happens a lot this shouldn't,
        and the chance of strings > 1 GB on 32-bit is rare but possible and thus
-       worth checking even in release */
+       worth checking even in release. OTOH it makes little sense to test for
+       this on 64-bit, if 64-bit code happens to go over then it's got bigger
+       problems than this assert. */
     CORRADE_ASSERT(size < std::size_t{1} << (sizeof(std::size_t)*8 - 2),
         "Containers::String: string expected to be smaller than 2^" << Utility::Debug::nospace << sizeof(std::size_t)*8 - 2 << "bytes, got" << size, );
+    #endif
 
     if(size < Implementation::SmallStringSize) {
         /* Everything already zero-init'd in the constructor init list */
@@ -289,24 +307,31 @@ String::String(Corrade::ValueInitT, const std::size_t size): _large{} {
 }
 
 String::String(Corrade::NoInitT, const std::size_t size)
-    #ifdef CORRADE_GRACEFUL_ASSERT
-    /* Zero-init the contents so the destructor doesn't crash if we assert here */
+    #if defined(CORRADE_TARGET_32BIT) && defined(CORRADE_GRACEFUL_ASSERT)
+    /* Zero-init the contents so the destructor doesn't crash if we assert
+       here. The assert is only on 32-bit, we don't need to do it otherwise. */
     : _large{}
     #endif
 {
+    #ifdef CORRADE_TARGET_32BIT
     /* Compared to StringView construction which happens a lot this shouldn't,
        and the chance of strings > 1 GB on 32-bit is rare but possible and thus
-       worth checking even in release */
+       worth checking even in release. OTOH it makes little sense to test for
+       this on 64-bit, if 64-bit code happens to go over then it's got bigger
+       problems than this assert. */
     CORRADE_ASSERT(size < std::size_t{1} << (sizeof(std::size_t)*8 - 2),
         "Containers::String: string expected to be smaller than 2^" << Utility::Debug::nospace << sizeof(std::size_t)*8 - 2 << "bytes, got" << size, );
+    #endif
 
     construct(Corrade::NoInit, size);
 }
 
 String::String(Corrade::DirectInitT, const std::size_t size, const char c): String{Corrade::NoInit, size} {
-    #ifdef CORRADE_GRACEFUL_ASSERT
-    /* If the NoInit constructor asserted, don't attempt to memset */
-    if(size >= Implementation::SmallStringSize && !_large.data) return;
+    #if defined(CORRADE_TARGET_32BIT) && defined(CORRADE_GRACEFUL_ASSERT)
+    /* If the NoInit constructor asserted, don't attempt to memset. The assert
+       is only on 32-bit, we don't need to do this otherwise. */
+    if(size >= Implementation::SmallStringSize && !_large.data)
+        return;
     #endif
 
     std::memset(size < Implementation::SmallStringSize ? _small.data : _large.data, c, size);

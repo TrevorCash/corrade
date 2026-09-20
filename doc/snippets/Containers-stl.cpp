@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -65,15 +65,19 @@ Containers::ArrayView<int> b = a;
 static_cast<void>(b);
 }
 
+#ifdef CORRADE_BUILD_DEPRECATED
 {
+CORRADE_IGNORE_DEPRECATED_PUSH
 /* [Array-initializer-list] */
 std::vector<int> a(5);                  // a.size() == 5
 std::vector<int> b{5};                  // b.size() == 1, b[0] == 5
 
-Containers::Array<int> c{5};            // c.size() == 5
+Containers::Array<int> c{5};            // c.size() == 5 (deprecated)
 auto d = Containers::array<int>({5});   // d.size() == 1, d[0] == 5
 /* [Array-initializer-list] */
+CORRADE_IGNORE_DEPRECATED_POP
 }
+#endif
 
 #if defined(CORRADE_TARGET_UNIX) || (defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_TARGET_WINDOWS_RT)) || defined(CORRADE_TARGET_EMSCRIPTEN)
 {

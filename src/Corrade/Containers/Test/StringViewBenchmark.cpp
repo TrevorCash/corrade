@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -207,12 +207,14 @@ const struct {
     {Cpu::Sse2|Cpu::Popcnt, "64bit popcnt (default)", nullptr},
     #endif
     #endif
-    #if defined(CORRADE_ENABLE_AVX2) && defined(CORRADE_ENABLE_POPCNT) && !defined(CORRADE_TARGET_32BIT)
+    #if defined(CORRADE_ENABLE_AVX2) && defined(CORRADE_ENABLE_POPCNT)
     #ifdef CORRADE_UTILITY_FORCE_CPU_POINTER_DISPATCH
     {Cpu::Avx2|Cpu::Popcnt, "32bit popcnt",
         stringCountCharacterImplementationAvx2Popcnt32},
     #endif
+    #ifndef CORRADE_TARGET_32BIT
     {Cpu::Avx2|Cpu::Popcnt, "64bit popcnt (default)", nullptr},
+    #endif
     #endif
     #ifdef CORRADE_ENABLE_SIMD128
     {Cpu::Simd128, nullptr, nullptr},
@@ -450,7 +452,8 @@ template<char character> void StringViewBenchmark::findCharacterNaive() {
                     break;
                 }
             }
-            if(!found) break;
+            if(!found)
+                break;
 
             ++count;
             a = found + 1;
@@ -570,7 +573,8 @@ template<char character> void StringViewBenchmark::findLastCharacterNaive() {
                     break;
                 }
             }
-            if(!found) break;
+            if(!found)
+                break;
 
             ++count;
             end = found - _text->begin();

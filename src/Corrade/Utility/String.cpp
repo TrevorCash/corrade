@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -26,14 +26,12 @@
 
 #include "String.h"
 
-#include <cctype>
-#include <cstring>
+#include <cerrno> /** @todo throw away once there's a better float parser */
 
+#include "Corrade/Containers/EnumSet.hpp"
 #include "Corrade/Containers/GrowableArray.h"
 #include "Corrade/Containers/Optional.h"
-#include "Corrade/Containers/StaticArray.h"
-#include "Corrade/Containers/StringIterable.h"
-#include "Corrade/Containers/StringStl.h"
+#include "Corrade/Containers/String.h"
 #include "Corrade/Utility/Implementation/cpu.h"
 #if defined(CORRADE_ENABLE_AVX2) || defined(CORRADE_ENABLE_BMI1)
 #include "Corrade/Utility/IntrinsicsAvx.h" /* TZCNT is in AVX headers :( */
@@ -46,186 +44,17 @@
 #include <wasm_simd128.h>
 #endif
 
-namespace Corrade { namespace Utility { namespace String {
-
-namespace Implementation {
-
-void ltrimInPlace(std::string& string, const Containers::ArrayView<const char> characters) {
-    string.erase(0, string.find_first_not_of(characters, 0, characters.size()));
-}
-
-void rtrimInPlace(std::string& string, const Containers::ArrayView<const char> characters) {
-    string.erase(string.find_last_not_of(characters, std::string::npos, characters.size())+1);
-}
-
-void trimInPlace(std::string& string, const Containers::ArrayView<const char> characters) {
-    rtrimInPlace(string, characters);
-    ltrimInPlace(string, characters);
-}
-
-std::string ltrim(std::string string, const Containers::ArrayView<const char> characters) {
-    ltrimInPlace(string, characters);
-    return string;
-}
-
-std::string rtrim(std::string string, const Containers::ArrayView<const char> characters) {
-    rtrimInPlace(string, characters);
-    return string;
-}
-
-std::string trim(std::string string, const Containers::ArrayView<const char> characters) {
-    trimInPlace(string, characters);
-    return string;
-}
-
-std::string join(const std::vector<std::string>& strings, const Containers::ArrayView<const char> delimiter) {
-    /* IDGAF that this has two extra allocations due to the Array being created
-       and then the String converted to a std::string vector, the input
-       std::string instances are MUCH worse */
-    Containers::Array<Containers::StringView> stringViews{strings.size()};
-    for(std::size_t i = 0; i != strings.size(); ++i)
-        stringViews[i] = strings[i];
-    return Containers::StringView{delimiter}.join(stringViews);
-}
-
-std::string joinWithoutEmptyParts(const std::vector<std::string>& strings, const Containers::ArrayView<const char> delimiter) {
-    /* IDGAF that this has two extra allocations due to the Array being created
-       and then the String converted to a std::string vector, the input
-       std::string instances are MUCH worse */
-    Containers::Array<Containers::StringView> stringViews{strings.size()};
-    for(std::size_t i = 0; i != strings.size(); ++i)
-        stringViews[i] = strings[i];
-    return Containers::StringView{delimiter}.joinWithoutEmptyParts(stringViews);
-}
-
-bool beginsWith(Containers::ArrayView<const char> string, const Containers::ArrayView<const char> prefix) {
-    /* This is soon meant to be deprecated so all the ugly conversions don't
-       bother me too much */
-    return Containers::StringView{string}.hasPrefix(Containers::StringView{prefix});
-}
-
-bool endsWith(Containers::ArrayView<const char> string, const Containers::ArrayView<const char> suffix) {
-    /* This is soon meant to be deprecated so all the ugly conversions don't
-       bother me too much */
-    return Containers::StringView{string}.hasSuffix(Containers::StringView{suffix});
-}
-
-std::string stripPrefix(std::string string, const Containers::ArrayView<const char> prefix) {
-    CORRADE_ASSERT(beginsWith({string.data(), string.size()}, prefix),
-        "Utility::String::stripPrefix(): string doesn't begin with given prefix", {});
-    string.erase(0, prefix.size());
-    return string;
-}
-
-std::string stripSuffix(std::string string, const Containers::ArrayView<const char> suffix) {
-    CORRADE_ASSERT(endsWith({string.data(), string.size()}, suffix),
-        "Utility::String::stripSuffix(): string doesn't end with given suffix", {});
-    string.erase(string.size() - suffix.size());
-    return string;
-}
-
-}
-
-namespace {
-    using namespace Containers::Literals;
-    constexpr Containers::StringView Whitespace = " \t\f\v\r\n"_s;
-}
-
-std::string ltrim(std::string string) { return ltrim(std::move(string), Whitespace); }
-
-std::string rtrim(std::string string) { return rtrim(std::move(string), Whitespace); }
-
-std::string trim(std::string string) { return trim(std::move(string), Whitespace); }
-
-void ltrimInPlace(std::string& string) { ltrimInPlace(string, Whitespace); }
-
-void rtrimInPlace(std::string& string) { rtrimInPlace(string, Whitespace); }
-
-void trimInPlace(std::string& string) { trimInPlace(string, Whitespace); }
-
 #ifdef CORRADE_BUILD_DEPRECATED
-Containers::Array<Containers::StringView> split(const Containers::StringView string, const char delimiter) {
-    return string.split(delimiter);
-}
+#include <string>
+#include <vector>
 
-Containers::Array<Containers::StringView> splitWithoutEmptyParts(const Containers::StringView string, const char delimiter) {
-    return string.splitWithoutEmptyParts(delimiter);
-}
-
-Containers::Array<Containers::StringView> splitWithoutEmptyParts(const Containers::StringView string, const Containers::StringView delimiters) {
-    return string.splitOnAnyWithoutEmptyParts(delimiters);
-}
-
-Containers::Array<Containers::StringView> splitWithoutEmptyParts(const Containers::StringView string) {
-    return string.splitOnWhitespaceWithoutEmptyParts();
-}
+#include "Corrade/Containers/ArrayViewStl.h"
+#include "Corrade/Containers/StaticArray.h"
+#include "Corrade/Containers/StringIterable.h"
+#include "Corrade/Containers/StringStl.h"
 #endif
 
-std::vector<std::string> split(const std::string& string, const char delimiter) {
-    /* IDGAF that this has one extra allocation due to the Array being copied
-       to a std::vector, the owning std::string instances are much worse */
-    Containers::Array<Containers::StringView> parts = Containers::StringView{string}.split(delimiter);
-    return std::vector<std::string>{parts.begin(), parts.end()};
-}
-
-std::vector<std::string> splitWithoutEmptyParts(const std::string& string, const char delimiter) {
-    /* IDGAF that this has one extra allocation due to the Array being copied
-       to a std::vector, the owning std::string instances are much worse */
-    Containers::Array<Containers::StringView> parts = Containers::StringView{string}.splitWithoutEmptyParts(delimiter);
-    return std::vector<std::string>{parts.begin(), parts.end()};
-}
-
-std::vector<std::string> splitWithoutEmptyParts(const std::string& string, const std::string& delimiters) {
-    /* IDGAF that this has one extra allocation due to the Array being copied
-       to a std::vector, the owning std::string instances are much worse */
-    Containers::Array<Containers::StringView> parts = Containers::StringView{string}.splitOnAnyWithoutEmptyParts(delimiters);
-    return std::vector<std::string>{parts.begin(), parts.end()};
-}
-
-std::vector<std::string> splitWithoutEmptyParts(const std::string& string) {
-    /* IDGAF that this has one extra allocation due to the Array being copied
-       to a std::vector, the owning std::string instances are much worse */
-    Containers::Array<Containers::StringView> parts = Containers::StringView{string}.splitOnWhitespaceWithoutEmptyParts();
-    return std::vector<std::string>{parts.begin(), parts.end()};
-}
-
-namespace {
-
-Containers::StaticArray<3, std::string> partitionInternal(const std::string& string, Containers::ArrayView<const char> separator) {
-    const std::size_t pos = string.find(separator, 0, separator.size());
-    return {
-        string.substr(0, pos),
-        pos == std::string::npos ? std::string{} : string.substr(pos, separator.size()),
-        pos == std::string::npos ? std::string{} : string.substr(pos + separator.size())
-    };
-}
-
-Containers::StaticArray<3, std::string> rpartitionInternal(const std::string& string, Containers::ArrayView<const char> separator) {
-    const std::size_t pos = string.rfind(separator, std::string::npos, separator.size());
-    return {
-        pos == std::string::npos ? std::string{} : string.substr(0, pos),
-        pos == std::string::npos ? std::string{} : string.substr(pos, separator.size()),
-        pos == std::string::npos ? string.substr(0) : string.substr(pos + separator.size())
-    };
-}
-
-}
-
-Containers::StaticArray<3, std::string> partition(const std::string& string, char separator) {
-    return partitionInternal(string, {&separator, 1});
-}
-
-Containers::StaticArray<3, std::string> partition(const std::string& string, const std::string& separator) {
-    return partitionInternal(string, {separator.data(), separator.size()});
-}
-
-Containers::StaticArray<3, std::string> rpartition(const std::string& string, char separator) {
-    return rpartitionInternal(string, {&separator, 1});
-}
-
-Containers::StaticArray<3, std::string> rpartition(const std::string& string, const std::string& separator) {
-    return rpartitionInternal(string, {separator.data(), separator.size()});
-}
+namespace Corrade { namespace Utility { namespace String {
 
 namespace Implementation {
 
@@ -458,7 +287,8 @@ CORRADE_UTILITY_CPU_MAYBE_UNUSED typename std::decay<decltype(commonPrefix)>::ty
     const std::size_t size = Utility::min(sizeA, sizeB);
     const char* const endA = a + size;
     for(const char *i = a, *j = b; i != endA; ++i, ++j)
-        if(*i != *j) return i;
+        if(*i != *j)
+            return i;
     return endA;
   };
 }
@@ -1029,13 +859,9 @@ Containers::String lowercase(Containers::String string) {
        String::nullTerminatedView() passed right into the function), make it
        owned first. Usually it'll get copied however, which already makes it
        owned. */
-    if(!string.isSmall() && string.deleter()) string = Containers::String{string};
+    if(!string.isSmall() && string.deleter())
+        string = Containers::String{string};
 
-    lowercaseInPlace(string);
-    return string;
-}
-
-std::string lowercase(std::string string) {
     lowercaseInPlace(string);
     return string;
 }
@@ -1057,13 +883,9 @@ Containers::String uppercase(Containers::String string) {
        String::nullTerminatedView() passed right into the function), make it
        owned first. Usually it'll get copied however, which already makes it
        owned. */
-    if(!string.isSmall() && string.deleter()) string = Containers::String{string};
+    if(!string.isSmall() && string.deleter())
+        string = Containers::String{string};
 
-    uppercaseInPlace(string);
-    return string;
-}
-
-std::string uppercase(std::string string) {
     uppercaseInPlace(string);
     return string;
 }
@@ -1097,7 +919,7 @@ Containers::String replaceAll(Containers::StringView string, const Containers::S
     while(const Containers::StringView found = string.find(search)) {
         arrayAppend(output, string.prefix(found.begin()));
         arrayAppend(output, replace);
-        string = string.slice(found.end(), string.end());
+        string = string.suffix(found.end());
     }
     arrayAppend(output, string);
     arrayAppend(output, '\0');
@@ -1115,7 +937,8 @@ Containers::String replaceAll(Containers::String string, const char search, cons
     /* If not even a single character is found, pass the argument through
        unchanged */
     const Containers::MutableStringView found = string.find(search);
-    if(!found) return Utility::move(string);
+    if(!found)
+        return Utility::move(string);
 
     /* Convert the found pointer to an index to be able to replace even after a
        potential reallocation below */
@@ -1125,7 +948,8 @@ Containers::String replaceAll(Containers::String string, const char search, cons
        as String::nullTerminatedView() passed right into the function), make it
        owned first. Usually it'll get copied however, which already makes it
        owned. */
-    if(!string.isSmall() && string.deleter()) string = Containers::String{string};
+    if(!string.isSmall() && string.deleter())
+        string = Containers::String{string};
 
     /* Replace the already-found occurence and delegate the rest further */
     string[firstFoundPosition] = replace;
@@ -1142,7 +966,8 @@ namespace {
 CORRADE_UTILITY_CPU_MAYBE_UNUSED typename std::decay<decltype(replaceAllInPlaceCharacter)>::type replaceAllInPlaceCharacterImplementation(Cpu::ScalarT) {
     return [](char* const data, const std::size_t size, const char search, const char replace) {
         for(char* i = data, *end = data + size; i != end; ++i)
-            if(*i == search) *i = replace;
+            if(*i == search)
+                *i = replace;
     };
 }
 
@@ -1468,6 +1293,471 @@ CORRADE_UTILITY_CPU_DISPATCHED(replaceAllInPlaceCharacterImplementation, void CO
 
 }
 
+Utility::Debug& operator<<(Utility::Debug& debug, const ParseState value) {
+    debug << "Utility::String::ParseState" << Utility::Debug::nospace;
+
+    switch(value) {
+        /* LCOV_EXCL_START */
+        #define _c(v) case ParseState::v: return debug << "::" #v;
+        _c(Success)
+        _c(Clamped)
+        _c(Failed)
+        #undef _c
+        /* LCOV_EXCL_STOP */
+    }
+
+    return debug << "(" << Utility::Debug::nospace << Utility::Debug::hex << std::uint8_t(value) << Utility::Debug::nospace << ")";
+}
+
+Utility::Debug& operator<<(Utility::Debug& debug, const ParseDecimalFlag value) {
+    debug << "Utility::String::ParseDecimalFlag" << Utility::Debug::nospace;
+
+    switch(value) {
+        /* LCOV_EXCL_START */
+        #define _c(v) case ParseDecimalFlag::v: return debug << "::" #v;
+        _c(DisallowSign)
+        #undef _c
+        /* LCOV_EXCL_STOP */
+    }
+
+    return debug << "(" << Utility::Debug::nospace << Utility::Debug::hex << std::uint8_t(value) << Utility::Debug::nospace << ")";
+}
+
+Utility::Debug& operator<<(Utility::Debug& debug, const ParseDecimalFlags value) {
+    return Containers::enumSetDebugOutput(debug, value, "Utility::String::ParseDecimalFlags{}", {
+        ParseDecimalFlag::DisallowSign,
+    });
+}
+
+Utility::Debug& operator<<(Utility::Debug& debug, const ParseHexadecimalFlag value) {
+    debug << "Utility::String::ParseHexadecimalFlag" << Utility::Debug::nospace;
+
+    switch(value) {
+        /* LCOV_EXCL_START */
+        #define _c(v) case ParseHexadecimalFlag::v: return debug << "::" #v;
+        _c(DisallowSign)
+        _c(AllowBasePrefix)
+        _c(AllowHashPrefix)
+        #undef _c
+        /* LCOV_EXCL_STOP */
+    }
+
+    return debug << "(" << Utility::Debug::nospace << Utility::Debug::hex << std::uint8_t(value) << Utility::Debug::nospace << ")";
+}
+
+Utility::Debug& operator<<(Utility::Debug& debug, const ParseHexadecimalFlags value) {
+    return Containers::enumSetDebugOutput(debug, value, "Utility::String::ParseHexadecimalFlags{}", {
+        ParseHexadecimalFlag::DisallowSign,
+        ParseHexadecimalFlag::AllowBasePrefix,
+        ParseHexadecimalFlag::AllowHashPrefix,
+    });
+}
+
+namespace {
+
+ParseResult parseDecimal(const char* const data, const std::size_t size, std::uint64_t& out) {
+    /* The caller should delegate here only if there's actually anything to
+       parse */
+    CORRADE_INTERNAL_DEBUG_ASSERT(data && size);
+
+    /* Eat leading zeros, as for those we don't need to do any checks or
+       multiplication. Initialize the output to zero. */
+    out = 0;
+    std::size_t i = 0;
+    while(i < size && data[i] == '0')
+        ++i;
+
+    /* The largest unsigned 64-bit decimal value (18446744073709551615) with no
+       leading zeros has 20 digits, so we can use 19 as an upper bound for a
+       parsing loop without any overflow checks, delaying them to the 20th
+       iteration, if there is any. The number can also have leading zeros, so
+       the overflow can happen much later. The general 99% case is however
+       without leading zeros, with less than 20 digits and with no overflow,
+       which this makes as fast as code with no bounds checks at all. */
+    constexpr std::size_t MaxDecimalLength = 20;
+    /* Compile-time verification. The `- 4` is for `ull\0` at the end. Looks
+       silly, yes, I know.    12345678901234567890 */
+    #define MAX_DECIMAL_VALUE 18446744073709551615ull
+    static_assert(MAX_DECIMAL_VALUE == ~std::uint64_t{} &&
+        sizeof(_CORRADE_HELPER_STR2(MAX_DECIMAL_VALUE)) - 4 == MaxDecimalLength,
+        "invalid hardcoded max 64-bit decimal value");
+    #undef MAX_DECIMAL_VALUE
+
+    /* Tight loop for as long as we're sure no 64-bit overflow can happen. If
+       the number was just zeros, this loop won't be entered at all. */
+    const std::size_t sizeUntilOverflow = min(size, i + MaxDecimalLength - 1);
+    for(; i != sizeUntilOverflow; ++i) {
+        const char c = data[i];
+        if(c < '0' || c > '9')
+            return {ParseState::Failed, i};
+        out = out*10 + c - '0';
+    }
+
+    /* If there's still some characters left, the very next character can still
+       fit, the others after will not. In most cases this branch won't be
+       entered at all, with all input being eaten by the above branches. */
+    if(size > sizeUntilOverflow) {
+        CORRADE_INTERNAL_DEBUG_ASSERT(i == sizeUntilOverflow);
+        for(; i != size; ++i) {
+            const char c = data[i];
+            if(c < '0' || c > '9')
+                return {ParseState::Failed, i};
+        }
+
+        /* If there is more than one characters after, or if multiplication or
+           addition for the last potentially fitting character would overflow,
+           return a clamped value */
+        const char c = data[sizeUntilOverflow];
+        if(size > sizeUntilOverflow + 1 || out > ~std::uint64_t{}/10 || out*10 > ~std::uint64_t{} - (c - '0')) {
+            out = ~std::uint64_t{};
+            return ParseState::Clamped;
+        }
+
+        /* If it won't overflow, add it to the output */
+        out = out*10 + c - '0';
+    }
+
+    /* All good */
+    return ParseState::Success;
+}
+
+ParseResult parseHexadecimal(const char* const data, const std::size_t size, std::uint64_t& out) {
+    /* The caller should delegate here only if there's actually anything to
+       parse */
+    CORRADE_INTERNAL_DEBUG_ASSERT(data && size);
+
+    /* Eat leading zeros, as for those we don't need to do any checks or
+       multiplication. Initialize the output to zero. */
+    out = 0;
+    std::size_t i = 0;
+    while(i < size && data[i] == '0')
+        ++i;
+
+    /* The largest unsigned hexadecimal value with no leading zeros has exactly
+       16 chars (each char representing four bits). Anything longer is an
+       overflow, so we can just go through at most 16 chars without any bounds
+       check, and unconditionally report overflow if there's more. */
+    const std::size_t sizeUntilOverflow = min(size, i + std::size_t{64/4});
+    for(; i != sizeUntilOverflow; ++i) {
+        out = out << 4;
+        const char c = data[i];
+        if(c >= '0' && c <= '9')
+            out += c - '0';
+        else if(c >= 'a' && c <= 'f')
+            out += c - 'a' + 10;
+        else if(c >= 'A' && c <= 'F')
+            out += c - 'A' + 10;
+        else
+            return {ParseState::Failed, i};
+    }
+
+    /* If there are any characters after, they can at best overflow, but may
+       also generate a parsing failure. In most cases this branch won't be
+       entered at all, with all input being eaten by the above branches. */
+    if(size > sizeUntilOverflow) {
+        CORRADE_INTERNAL_DEBUG_ASSERT(i == sizeUntilOverflow);
+        for(; i != size; ++i) {
+            const char c = data[i];
+            if(!(c >= '0' && c <= '9') &&
+               !(c >= 'a' && c <= 'f') &&
+               !(c >= 'A' && c <= 'F'))
+                return {ParseState::Failed, i};
+        }
+
+        out = ~std::uint64_t{};
+        return ParseState::Clamped;
+    }
+
+    /* Otherwise all good */
+    return ParseState::Success;
+}
+
+std::size_t skipDecimalPrefix(const char*, std::size_t, ParseDecimalFlags) {
+    return 0;
+}
+
+std::size_t skipHexadecimalPrefix(const char* const data, const std::size_t size, const ParseHexadecimalFlags flags) {
+    if(flags >= ParseHexadecimalFlag::AllowBasePrefix && size >= 2 && data[0] == '0' && (data[1] == 'X' || data[1] == 'x'))
+        return 2;
+    if(flags >= ParseHexadecimalFlag::AllowHashPrefix && size >= 1 && data[0] == '#')
+        return 1;
+    return 0;
+}
+
+template<class Flag, ParseResult(*parse)(const char*, std::size_t, std::uint64_t&), std::size_t(*skipPrefix)(const char*, std::size_t, Containers::EnumSet<Flag>)> ParseResult parseInteger(const char* const data, const std::size_t size, std::uint64_t& value, const std::uint64_t min, const std::uint64_t max, const Containers::EnumSet<Flag> flags) {
+    /* Fail if the string is empty. Each condition is a separate branch here to
+       make sure they're all covered properly. */
+    if(!size)
+        return {ParseState::Failed, 0};
+    /* Negative numbers are invalid for an unsigned value. This is notably
+       different from std::strtoull() which does something stupid instead. */
+    if(data[0] == '-')
+        return {ParseState::Failed, 0};
+
+    /* Explicitly positive number */
+    std::size_t i = 0;
+    if(data[0] == '+') {
+        /* Fail if the flags don't allow it */
+        if(flags >= Flag::DisallowSign)
+            return {ParseState::Failed, 0};
+
+        /* Skip the sign, and fail if there's nothing after */
+        ++i;
+        if(i == size)
+            return {ParseState::Failed, i};
+    }
+
+    /* Skip any prefixes, and again fail if there's nothing after */
+    i += skipPrefix(data + i, size - i, flags);
+    if(i == size)
+        return {ParseState::Failed, i};
+
+    /* Parse the (non-empty) rest of the string. If it failed, it means there
+       are non-numeric characters. */
+    std::uint64_t parsed;
+    const ParseResult result = parse(data + i, size - i, parsed);
+    if(result == ParseState::Failed)
+        return {ParseState::Failed, result.index() + i};
+
+    /* If the result didn't fit into 64 bits or if it's outside our limits,
+       clamp it appropriately and report that */
+    if(result == ParseState::Clamped || parsed < min || parsed > max) {
+        value = Utility::min(Utility::max(parsed, min), max);
+        return ParseState::Clamped;
+    }
+
+    /* Otherwise it's a pure success. All Failed nad Clamped cases from the
+       delegated parse() should have been handled above. */
+    CORRADE_INTERNAL_DEBUG_ASSERT(result == ParseState::Success);
+    value = parsed;
+    return ParseState::Success;
+}
+
+template<class Flag, ParseResult(*parse)(const char*, std::size_t, std::uint64_t&), std::size_t(*skipPrefix)(const char*, std::size_t, Containers::EnumSet<Flag>)> ParseResult parseInteger(const char* const data, const std::size_t size, std::int64_t& value, const std::int64_t min, const std::int64_t max, const Containers::EnumSet<Flag> flags) {
+    /* Fail if the string is empty */
+    if(!size)
+        return {ParseState::Failed, 0};
+
+    /* Decide if the number is positive or negative */
+    bool positive = true;
+    std::size_t i = 0;
+    if(data[0] == '-' || data[0] == '+') {
+        /* Fail if the flags don't allow a sign */
+        if(flags >= Flag::DisallowSign)
+            return {ParseState::Failed, 0};
+
+        /* Skip the sign, and fail if there's nothing after */
+        positive = data[0] == '+';
+        ++i;
+        if(i == size)
+            return {ParseState::Failed, i};
+    }
+
+    /* Skip any prefixes, and again fail if there's nothing after */
+    i += skipPrefix(data + i, size - i, flags);
+    if(i == size)
+        return {ParseState::Failed, i};
+
+    /* Parse the (non-empty) rest of the string as an unsigned number. If it
+       failed, it means there are non-numeric characters. */
+    std::uint64_t parsed;
+    const ParseResult result = parse(data + i, size - i, parsed);
+    if(result == ParseState::Failed)
+        return {ParseState::Failed, result.index() + i};
+
+    /* Make the parsed value signed, clamp and report overflow if it doesn't
+       fit into a signed type. This handles also the case where parse() above
+       returned Clamped as in that case it'll return UINT64_MAX which is larger
+       than INT64_MAX. */
+    if(positive && parsed > INT64_MAX) {
+        value = INT64_MAX;
+        return ParseState::Clamped;
+    }
+    /* Can't just negate INT64_MIN because that's one larger than a max
+       representable value. So instead add one to make it fit, then negate,
+       then convert to an unsigned type, and then add one. Could also use
+       `std::uint64_t(INT64_MAX) + 1` but this is more symmetrical I guess? */
+    if(!positive && parsed > std::uint64_t(-(INT64_MIN + 1)) + 1) {
+        value = INT64_MIN;
+        return ParseState::Clamped;
+    }
+
+    /* Convert to a signed value. On MSVC this causes a "C4146: unary minus
+       operator applied to unsigned type, result still unsigned" warning which
+       is irrelevant because the result *is* correct. And working around that
+       by doing a cast to std::int64_t first would make it unclear what
+       happens with INT64_MIN, as -INT64_MIN (a positive value) is
+       unrepresentable in a signed type (same case as in the above comment
+       basically). So, fuck off with that warning. */
+    #if defined(CORRADE_TARGET_MSVC) && !defined(CORRADE_TARGET_CLANG_CL)
+    #pragma warning(push)
+    #pragma warning(disable: 4146)
+    #endif
+    value = positive ? parsed : -parsed;
+    #if defined(CORRADE_TARGET_MSVC) && !defined(CORRADE_TARGET_CLANG_CL)
+    #pragma warning(pop)
+    #endif
+
+    /* If the signed value is outside our limits, clamp and report as well */
+    if(value < min || value > max) {
+        value = Utility::min(Utility::max(value, min), max);
+        return ParseState::Clamped;
+    }
+
+    /* Otherwise it's a pure success. All Failed nad Clamped cases from the
+       delegated parse() should have been handled above. */
+    CORRADE_INTERNAL_DEBUG_ASSERT(result == ParseState::Success);
+    return ParseState::Success;
+}
+
+}
+
+ParseResult parseDecimal(const Containers::StringView string, std::uint64_t& value, const std::uint64_t min, const std::uint64_t max, const ParseDecimalFlags flags) {
+    /* Debug-only assert to avoid expensive checks in release builds */
+    CORRADE_DEBUG_ASSERT(min <= max,
+        "Utility::String::parseDecimal(): expected min to be not greater than max but got" << min << "and" << max, ParseState{});
+    return parseInteger<ParseDecimalFlag, parseDecimal, skipDecimalPrefix>(string.data(), string.size(), value, min, max, flags);
+}
+
+ParseResult parseDecimal(const Containers::StringView string, std::int64_t& value, const std::int64_t min, const std::int64_t max, const ParseDecimalFlags flags) {
+    /* Debug-only assert to avoid expensive checks in release builds */
+    CORRADE_DEBUG_ASSERT(min <= max,
+        "Utility::String::parseDecimal(): expected min to be not greater than max but got" << min << "and" << max, ParseState{});
+    return parseInteger<ParseDecimalFlag, parseDecimal, skipDecimalPrefix>(string.data(), string.size(), value, min, max, flags);
+}
+
+ParseResult parseHexadecimal(const Containers::StringView string, std::uint64_t& value, const std::uint64_t min, const std::uint64_t max, const ParseHexadecimalFlags flags) {
+    /* Debug-only assert to avoid expensive checks in release builds */
+    CORRADE_DEBUG_ASSERT(min <= max,
+        "Utility::String::parseHexadecimal(): expected min to be not greater than max but got" << min << "and" << max, ParseState{});
+    return parseInteger<ParseHexadecimalFlag, parseHexadecimal, skipHexadecimalPrefix>(string.data(), string.size(), value, min, max, flags);
+}
+
+ParseResult parseHexadecimal(const Containers::StringView string, std::int64_t& value, const std::int64_t min, const std::int64_t max, const ParseHexadecimalFlags flags) {
+    /* Debug-only assert to avoid expensive checks in release builds */
+    CORRADE_DEBUG_ASSERT(min <= max,
+        "Utility::String::parseHexadecimal(): expected min to be not greater than max but got" << min << "and" << max, ParseState{});
+    return parseInteger<ParseHexadecimalFlag, parseHexadecimal, skipHexadecimalPrefix>(string.data(), string.size(), value, min, max, flags);
+}
+
+Utility::Debug& operator<<(Utility::Debug& debug, const ParseFloatFlag value) {
+    debug << "Utility::String::ParseFloatFlag" << Utility::Debug::nospace;
+
+    switch(value) {
+        /* LCOV_EXCL_START */
+        #define _c(v) case ParseFloatFlag::v: return debug << "::" #v;
+        _c(DisallowSign)
+        #undef _c
+        /* LCOV_EXCL_STOP */
+    }
+
+    return debug << "(" << Utility::Debug::nospace << Utility::Debug::hex << std::uint8_t(value) << Utility::Debug::nospace << ")";
+}
+
+Utility::Debug& operator<<(Utility::Debug& debug, const ParseFloatFlags value) {
+    return Containers::enumSetDebugOutput(debug, value, "Utility::String::ParseFloatFlags{}", {
+        ParseFloatFlag::DisallowSign,
+    });
+}
+
+namespace {
+
+template<class T, T(*parse)(const char*, char**)> ParseResult parseFloat(const Containers::StringView string, T& value, ParseFloatFlags flags) {
+    /* Make a null-terminated copy because that's what std::strtof() needs and
+       it's just sad. In some cases, such as with argc/argv parsing, the input
+       will be null terminated already, in most other cases the number could
+       hopefully fit into the SSO. Don't want to assert / fail for too long
+       literals, so just allocating in that case. Sorry. Frankly, std::strtof()
+       performance is likely so mediocre that this extra string creation is
+       not going to make it significantly worse. (And it's not unlikely that
+       std::strtof() itself allocates for some strange reason.)
+
+       Alternatively std::strtof() *could* work with a non-null-terminated
+       output if we assumed there was something non-numeric after, but that's
+       basically impossible to check from here, and would fail miserably if the
+       string was a slice of a memory block containing just digits and nothing
+       else -- then it'd continue forever after.
+
+       I also cannot reliably opt into using std::from_chars() if C++17 is
+       available because it doesn't properly distinguish out-of-range inputs
+       and is thus a functionality regression from std::strtof(). Sigh. Details
+       here: https://isocpp.org/files/papers/P4168R0.html */
+    /** @todo revisit once there's a chance to do reasonable float parsing */
+    const Containers::String nullTerminated = Containers::String::nullTerminatedView(string);
+    /* Cache the data and size to speed up debug builds */
+    const char* const data = nullTerminated.data();
+    const std::size_t size = nullTerminated.size();
+
+    /* Fail if the string is empty */
+    if(!size)
+        return {ParseState::Failed, 0};
+
+    /* Decide if the number is positive or negative */
+    bool positive = true;
+    std::size_t i = 0;
+    if(data[0] == '-' || data[0] == '+') {
+        /* Fail if the flags don't allow a sign */
+        if(flags >= ParseFloatFlag::DisallowSign)
+            return {ParseState::Failed, 0};
+
+        /* Skip the sign, and fail if there's nothing after */
+        positive = data[0] == '+';
+        ++i;
+        if(i == size)
+            return {ParseState::Failed, i};
+    }
+
+    /* Verify there's an actual number or an infinity / NaN right after --
+       std::strtof() discards leading whitespace and this implementation should
+       not silently allow it */
+    const char c = data[i];
+    if(!(c >= '0' && c <= '9') &&   /* Digit */
+       c != '.' &&                  /* Period because .5 is valid apparently */
+       c != 'i' && c != 'I' &&      /* inf, INF, infinity, ... */
+       c != 'n' && c != 'N')        /* nan, NaN, NAN(...), ... */
+        return {ParseState::Failed, i};
+
+    /* I don't intend to support this weird hex representation once Corrade has
+       own float parsers so disallowing it here already. (A hex representation
+       of a float/double bit pattern is something else, supporting that makes
+       sense, but that doesn't need a complex float parser.) The value can have
+       a p / P character denoting the exponent but that's optional so I have to
+       check for the prefix. */
+    if(i + 1 < size && c == '0') {
+        const char d = data[i + 1];
+        if(d == 'x' || d == 'X')
+            return {ParseState::Failed, i + 1};
+    }
+
+    /* Reset errno before so we can detect an overflow and delegate to
+       std::strtof() / std::strtod(). If the parsing didn't consume everything
+       until the end, it failed. */
+    errno = 0;
+    char* end{};
+    value = parse(data + i, &end);
+    if(end != data + size)
+        return {ParseState::Failed, std::size_t(end - data)};
+
+    /* Apply the sign. It might have overflown, in which case the value is now
+       positive or negative infinity. */
+    value = positive ? value : -value;
+    if(errno == ERANGE)
+        return ParseState::Clamped;
+
+    /* Otherwise it's a success */
+    return ParseState::Success;
+}
+
+}
+
+ParseResult parseFloat(const Containers::StringView string, float& value, const ParseFloatFlags flags) {
+    return parseFloat<float, std::strtof>(string, value, flags);
+}
+
+ParseResult parseFloat(const Containers::StringView string, double& value, const ParseFloatFlags flags) {
+    return parseFloat<double, std::strtod>(string, value, flags);
+}
+
 Containers::Optional<Containers::Array<std::uint32_t>> parseNumberSequence(const Containers::StringView string, const std::uint32_t min, const std::uint32_t max) {
     Containers::Array<std::uint32_t> out;
 
@@ -1524,7 +1814,8 @@ Containers::Optional<Containers::Array<std::uint32_t>> parseNumberSequence(const
                https://stackoverflow.com/a/1815371 are mostly just crap, using
                a *division* to test if a multiplication overflowed?! */
             const std::uint64_t next = std::uint64_t{number}*10 + (c - '0');
-            if(next > ~std::uint32_t{}) overflow = true;
+            if(next > ~std::uint32_t{})
+                overflow = true;
 
             number = next;
 
@@ -1548,5 +1839,256 @@ Containers::Optional<Containers::Array<std::uint32_t>> parseNumberSequence(const
     /* GCC 4.8 decases when seeing just `return out` here */
     return Containers::optional(Utility::move(out));
 }
+
+#ifdef CORRADE_BUILD_DEPRECATED
+std::string fromArray(const char* string) {
+    return string ? std::string{string} : std::string{};
+}
+
+std::string fromArray(const char* string, std::size_t length) {
+    return string ? std::string{string, length} : std::string{};
+}
+
+void ltrimInPlace(std::string& string, const std::string& characters) {
+    string.erase(0, string.find_first_not_of(characters));
+}
+
+void rtrimInPlace(std::string& string, const std::string& characters) {
+    string.erase(string.find_last_not_of(characters)+1);
+}
+
+void trimInPlace(std::string& string, const std::string& characters) {
+    CORRADE_IGNORE_DEPRECATED_PUSH
+    rtrimInPlace(string, characters);
+    ltrimInPlace(string, characters);
+    CORRADE_IGNORE_DEPRECATED_POP
+}
+
+std::string ltrim(std::string string, const std::string& characters) {
+    CORRADE_IGNORE_DEPRECATED_PUSH
+    ltrimInPlace(string, characters);
+    CORRADE_IGNORE_DEPRECATED_POP
+    return string;
+}
+
+std::string rtrim(std::string string, const std::string& characters) {
+    CORRADE_IGNORE_DEPRECATED_PUSH
+    rtrimInPlace(string, characters);
+    CORRADE_IGNORE_DEPRECATED_POP
+    return string;
+}
+
+std::string trim(std::string string, const std::string& characters) {
+    CORRADE_IGNORE_DEPRECATED_PUSH
+    trimInPlace(string, characters);
+    CORRADE_IGNORE_DEPRECATED_POP
+    return string;
+}
+
+std::string join(const std::vector<std::string>& strings, const std::string& delimiter) {
+    return Containers::StringView{delimiter}.join(Containers::arrayView(strings));
+}
+
+std::string join(const std::vector<std::string>& strings, char delimiter) {
+    /* It's fine (although ugly), this will be a SSO */
+    CORRADE_IGNORE_DEPRECATED_PUSH
+    return join(strings, {&delimiter, 1});
+    CORRADE_IGNORE_DEPRECATED_POP
+}
+
+std::string joinWithoutEmptyParts(const std::vector<std::string>& strings, const std::string& delimiter) {
+    return Containers::StringView{delimiter}.joinWithoutEmptyParts(Containers::arrayView(strings));
+}
+
+std::string joinWithoutEmptyParts(const std::vector<std::string>& strings, char delimiter) {
+    /* It's fine (although ugly), this will be a SSO */
+    CORRADE_IGNORE_DEPRECATED_PUSH
+    return joinWithoutEmptyParts(strings, {&delimiter, 1});
+    CORRADE_IGNORE_DEPRECATED_POP
+}
+
+bool beginsWith(const std::string& string, const std::string& prefix) {
+    /* This is soon meant to be deprecated so all the ugly conversions don't
+       bother me too much */
+    return Containers::StringView{string}.hasPrefix(prefix);
+}
+
+bool beginsWith(const std::string& string, char prefix) {
+    return !string.empty() && string[0] == prefix;
+}
+
+bool viewBeginsWith(Containers::ArrayView<const char> string, Containers::ArrayView<const char> prefix) {
+    /* Yup, it's weird like this, see the tests */
+    return Containers::StringView{string.data(), string.size()}.hasPrefix({prefix.data(), prefix.size() - 1});
+}
+
+bool viewBeginsWith(Containers::ArrayView<const char> string, char prefix) {
+    return Containers::StringView{string.data(), string.size()}.hasPrefix(prefix);
+}
+
+bool endsWith(const std::string& string, const std::string& suffix) {
+    /* This is soon meant to be deprecated so all the ugly conversions don't
+       bother me too much */
+    return Containers::StringView{string}.hasSuffix(suffix);
+}
+
+bool endsWith(const std::string& string, char suffix) {
+    return !string.empty() && string[string.size() - 1] == suffix;
+}
+
+bool viewEndsWith(Containers::ArrayView<const char> string, Containers::ArrayView<const char> suffix) {
+    /* Yup, it's weird like this, see the tests */
+    return Containers::StringView{string.data(), string.size()}.hasSuffix({suffix.data(), suffix.size() - 1});
+}
+
+bool viewEndsWith(Containers::ArrayView<const char> string, char suffix) {
+    return Containers::StringView{string.data(), string.size()}.hasSuffix(suffix);
+}
+
+std::string stripPrefix(std::string string, const std::string& prefix) {
+    CORRADE_ASSERT(Containers::StringView{string}.hasPrefix(prefix),
+        "Utility::String::stripPrefix(): string doesn't begin with given prefix", {});
+    string.erase(0, prefix.size());
+    return string;
+}
+
+std::string stripPrefix(std::string string, char prefix) {
+    /* It's fine (although ugly), this will be a SSO */
+    CORRADE_IGNORE_DEPRECATED_PUSH
+    return stripPrefix(std::move(string), {&prefix, 1});
+    CORRADE_IGNORE_DEPRECATED_POP
+}
+
+std::string stripSuffix(std::string string, const std::string& suffix) {
+    CORRADE_ASSERT(Containers::StringView{string}.hasSuffix(suffix),
+        "Utility::String::stripSuffix(): string doesn't end with given suffix", {});
+    string.erase(string.size() - suffix.size());
+    return string;
+}
+
+std::string stripSuffix(std::string string, char suffix) {
+    /* It's fine (although ugly), this will be a SSO */
+    CORRADE_IGNORE_DEPRECATED_PUSH
+    return stripSuffix(std::move(string), {&suffix, 1});
+    CORRADE_IGNORE_DEPRECATED_POP
+}
+
+namespace {
+    using namespace Containers::Literals;
+    constexpr Containers::StringView Whitespace = " \t\f\v\r\n"_s;
+}
+
+std::string ltrim(std::string string) {
+    CORRADE_IGNORE_DEPRECATED_PUSH
+    return ltrim(std::move(string), Whitespace);
+    CORRADE_IGNORE_DEPRECATED_POP
+}
+
+std::string rtrim(std::string string) {
+    CORRADE_IGNORE_DEPRECATED_PUSH
+    return rtrim(std::move(string), Whitespace);
+    CORRADE_IGNORE_DEPRECATED_POP
+}
+
+std::string trim(std::string string) {
+    CORRADE_IGNORE_DEPRECATED_PUSH
+    return trim(std::move(string), Whitespace);
+    CORRADE_IGNORE_DEPRECATED_POP
+}
+
+void ltrimInPlace(std::string& string) {
+    CORRADE_IGNORE_DEPRECATED_PUSH
+    ltrimInPlace(string, Whitespace);
+    CORRADE_IGNORE_DEPRECATED_POP
+}
+
+void rtrimInPlace(std::string& string) {
+    CORRADE_IGNORE_DEPRECATED_PUSH
+    rtrimInPlace(string, Whitespace);
+    CORRADE_IGNORE_DEPRECATED_POP
+}
+
+void trimInPlace(std::string& string) {
+    CORRADE_IGNORE_DEPRECATED_PUSH
+    trimInPlace(string, Whitespace);
+    CORRADE_IGNORE_DEPRECATED_POP
+}
+
+Containers::Array<Containers::StringView> split(const Containers::StringView string, const char delimiter) {
+    return string.split(delimiter);
+}
+
+Containers::Array<Containers::StringView> splitWithoutEmptyParts(const Containers::StringView string, const char delimiter) {
+    return string.splitWithoutEmptyParts(delimiter);
+}
+
+Containers::Array<Containers::StringView> splitWithoutEmptyParts(const Containers::StringView string, const Containers::StringView delimiters) {
+    return string.splitOnAnyWithoutEmptyParts(delimiters);
+}
+
+Containers::Array<Containers::StringView> splitWithoutEmptyParts(const Containers::StringView string) {
+    return string.splitOnWhitespaceWithoutEmptyParts();
+}
+
+std::vector<std::string> split(const std::string& string, const char delimiter) {
+    /* IDGAF that this has one extra allocation due to the Array being copied
+       to a std::vector, the owning std::string instances are much worse */
+    Containers::Array<Containers::StringView> parts = Containers::StringView{string}.split(delimiter);
+    return std::vector<std::string>{parts.begin(), parts.end()};
+}
+
+std::vector<std::string> splitWithoutEmptyParts(const std::string& string, const char delimiter) {
+    /* IDGAF that this has one extra allocation due to the Array being copied
+       to a std::vector, the owning std::string instances are much worse */
+    Containers::Array<Containers::StringView> parts = Containers::StringView{string}.splitWithoutEmptyParts(delimiter);
+    return std::vector<std::string>{parts.begin(), parts.end()};
+}
+
+std::vector<std::string> splitWithoutEmptyParts(const std::string& string, const std::string& delimiters) {
+    /* IDGAF that this has one extra allocation due to the Array being copied
+       to a std::vector, the owning std::string instances are much worse */
+    Containers::Array<Containers::StringView> parts = Containers::StringView{string}.splitOnAnyWithoutEmptyParts(delimiters);
+    return std::vector<std::string>{parts.begin(), parts.end()};
+}
+
+std::vector<std::string> splitWithoutEmptyParts(const std::string& string) {
+    /* IDGAF that this has one extra allocation due to the Array being copied
+       to a std::vector, the owning std::string instances are much worse */
+    Containers::Array<Containers::StringView> parts = Containers::StringView{string}.splitOnWhitespaceWithoutEmptyParts();
+    return std::vector<std::string>{parts.begin(), parts.end()};
+}
+
+Containers::StaticArray<3, std::string> partition(const std::string& string, const std::string& separator) {
+    const std::size_t pos = string.find(separator);
+    return {
+        string.substr(0, pos),
+        pos == std::string::npos ? std::string{} : string.substr(pos, separator.size()),
+        pos == std::string::npos ? std::string{} : string.substr(pos + separator.size())
+    };
+}
+
+Containers::StaticArray<3, std::string> partition(const std::string& string, char separator) {
+    /* It's fine (although ugly), this will be a SSO */
+    CORRADE_IGNORE_DEPRECATED_PUSH
+    return partition(string, {&separator, 1});
+    CORRADE_IGNORE_DEPRECATED_POP
+}
+
+Containers::StaticArray<3, std::string> rpartition(const std::string& string, const std::string& separator) {
+    const std::size_t pos = string.rfind(separator);
+    return {
+        pos == std::string::npos ? std::string{} : string.substr(0, pos),
+        pos == std::string::npos ? std::string{} : string.substr(pos, separator.size()),
+        pos == std::string::npos ? string.substr(0) : string.substr(pos + separator.size())
+    };
+}
+
+Containers::StaticArray<3, std::string> rpartition(const std::string& string, char separator) {
+    /* It's fine (although ugly), this will be a SSO */
+    CORRADE_IGNORE_DEPRECATED_PUSH
+    return rpartition(string, {&separator, 1});
+    CORRADE_IGNORE_DEPRECATED_POP
+}
+#endif
 
 }}}

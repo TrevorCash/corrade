@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -27,6 +27,8 @@
 /* Deliberately including first to make sure it works without ArrayView being
    included first */
 #include "Corrade/Containers/StringView.h"
+
+#include <cctype> /* std::isspace() */
 
 #include "Corrade/Cpu.h"
 #include "Corrade/Containers/Array.h"
@@ -102,6 +104,9 @@ namespace Test { namespace {
 struct StringViewTest: TestSuite::Tester {
     explicit StringViewTest();
 
+    void debugFlag();
+    void debugFlags();
+
     void captureImplementations();
     void restoreImplementations();
 
@@ -123,7 +128,7 @@ struct StringViewTest: TestSuite::Tester {
     #ifdef CORRADE_TARGET_32BIT
     void constructTooLarge();
     #endif
-    void constructNullptrNullTerminated();
+    void constructInvalidNullTerminated();
 
     void constructZeroNullPointerAmbiguity();
 
@@ -161,6 +166,7 @@ struct StringViewTest: TestSuite::Tester {
     void splitOnAny();
     void splitOnAnyFlags();
     void splitOnWhitespace();
+    void splitOnWhitespaceStlIsspaceCompatibility();
     void splitNullView();
 
     void partitionCharacter();
@@ -187,6 +193,7 @@ struct StringViewTest: TestSuite::Tester {
     void exceptSuffixDisabledOverloads();
 
     void trimmed();
+    void trimmedStlIsspaceCompatibility();
     void trimmedFlags();
     void trimmedNullView();
 
@@ -227,8 +234,6 @@ struct StringViewTest: TestSuite::Tester {
     void countCharacterUnalignedLessThanTwoVectors();
     void countCharacterUnalignedLessThanOneVector();
 
-    void debugFlag();
-    void debugFlags();
     void debug();
 
     private:
@@ -302,12 +307,14 @@ const struct {
     #endif
     #endif
     #endif
-    #if defined(CORRADE_ENABLE_AVX2) && defined(CORRADE_ENABLE_POPCNT) && !defined(CORRADE_TARGET_32BIT)
+    #if defined(CORRADE_ENABLE_AVX2) && defined(CORRADE_ENABLE_POPCNT)
     #ifdef CORRADE_UTILITY_FORCE_CPU_POINTER_DISPATCH
     {Cpu::Avx2|Cpu::Popcnt, 32, "32bit popcnt",
         stringCountCharacterImplementationAvx2Popcnt32},
     #endif
+    #ifndef CORRADE_TARGET_32BIT
     {Cpu::Avx2|Cpu::Popcnt, 32, "64bit popcnt (default)", nullptr},
+    #endif
     #endif
     #ifdef CORRADE_ENABLE_SIMD128
     {Cpu::Simd128, 16, nullptr, nullptr},
@@ -315,7 +322,10 @@ const struct {
 };
 
 StringViewTest::StringViewTest() {
-    addTests({&StringViewTest::constructDefault<const char>,
+    addTests({&StringViewTest::debugFlag,
+              &StringViewTest::debugFlags,
+
+              &StringViewTest::constructDefault<const char>,
               &StringViewTest::constructDefault<char>,
               &StringViewTest::constructDefaultConstexpr,
               &StringViewTest::construct<const char>,
@@ -339,7 +349,7 @@ StringViewTest::StringViewTest() {
               #ifdef CORRADE_TARGET_32BIT
               &StringViewTest::constructTooLarge,
               #endif
-              &StringViewTest::constructNullptrNullTerminated,
+              &StringViewTest::constructInvalidNullTerminated,
 
               &StringViewTest::constructZeroNullPointerAmbiguity,
 
@@ -376,6 +386,7 @@ StringViewTest::StringViewTest() {
               &StringViewTest::splitOnAny,
               &StringViewTest::splitOnAnyFlags,
               &StringViewTest::splitOnWhitespace,
+              &StringViewTest::splitOnWhitespaceStlIsspaceCompatibility,
               &StringViewTest::splitNullView,
 
               &StringViewTest::partitionCharacter,
@@ -400,6 +411,7 @@ StringViewTest::StringViewTest() {
               &StringViewTest::exceptSuffixDisabledOverloads,
 
               &StringViewTest::trimmed,
+              &StringViewTest::trimmedStlIsspaceCompatibility,
               &StringViewTest::trimmedFlags,
               &StringViewTest::trimmedNullView,
 
@@ -447,9 +459,21 @@ StringViewTest::StringViewTest() {
         &StringViewTest::captureImplementations,
         &StringViewTest::restoreImplementations);
 
-    addTests({&StringViewTest::debugFlag,
-              &StringViewTest::debugFlags,
-              &StringViewTest::debug});
+    addTests({&StringViewTest::debug});
+}
+
+void StringViewTest::debugFlag() {
+    Containers::String out;
+
+    Debug{&out} << StringViewFlag::Global << StringViewFlag(0xf0f0u);
+    CORRADE_COMPARE(out, "Containers::StringViewFlag::Global Containers::StringViewFlag(0xf0f0)\n");
+}
+
+void StringViewTest::debugFlags() {
+    Containers::String out;
+
+    Debug{&out} << (StringViewFlag::Global|StringViewFlag::NullTerminated) << StringViewFlags{};
+    CORRADE_COMPARE(out, "Containers::StringViewFlag::Global|Containers::StringViewFlag::NullTerminated Containers::StringViewFlags{}\n");
 }
 
 using namespace Literals;
@@ -536,7 +560,7 @@ template<class T> void StringViewTest::construct() {
 
 void StringViewTest::constructConstexpr() {
     constexpr const char* string = "hell\0!!"; /* 7 chars + \0 at the end */
-    constexpr StringView view = {string, 6, StringViewFlag::Global|StringViewFlag::NullTerminated};
+    constexpr StringView view = {string, 7, StringViewFlag::Global|StringViewFlag::NullTerminated};
     constexpr bool boolConversion = !!view;
     constexpr bool empty = view.isEmpty();
     constexpr std::size_t size = view.size();
@@ -544,7 +568,7 @@ void StringViewTest::constructConstexpr() {
     constexpr const void* data = view.data();
     CORRADE_VERIFY(boolConversion);
     CORRADE_VERIFY(!empty);
-    CORRADE_COMPARE(size, 6);
+    CORRADE_COMPARE(size, 7);
     CORRADE_COMPARE(flags, StringViewFlag::Global|StringViewFlag::NullTerminated);
     {
         #if defined(CORRADE_TARGET_MSVC) && !defined(CORRADE_TARGET_CLANG) && _MSC_VER >= 1910 && _MSC_VER < 1931 && defined(_DEBUG)
@@ -674,7 +698,7 @@ void StringViewTest::constructFromMutable() {
 }
 
 void StringViewTest::constructCopy() {
-    StringView a{"hello\0!", 8, StringViewFlag::Global|StringViewFlag::NullTerminated};
+    StringView a{"hello\0!", 7, StringViewFlag::Global|StringViewFlag::NullTerminated};
 
     StringView b = a;
     CORRADE_COMPARE(b.data(), a.data());
@@ -735,14 +759,29 @@ void StringViewTest::constructTooLarge() {
 }
 #endif
 
-void StringViewTest::constructNullptrNullTerminated() {
+void StringViewTest::constructInvalidNullTerminated() {
     CORRADE_SKIP_IF_NO_DEBUG_ASSERT();
+
+    /* Null pointer and a non-null-terminated string should be file without the
+       NullTerminated flag */
+    StringView{nullptr, 0, StringViewFlag::Global};
+    StringView{ArrayView<const char>{}, StringViewFlag::Global};
+    StringView{"hello", 4, StringViewFlag::Global};
+    StringView{ArrayView<const char>{"hello", 4}, StringViewFlag::Global};
 
     Containers::String out;
     Error redirectError{&out};
+    /* Null pointer, same with an empty ArrayView */
     StringView{nullptr, 0, StringViewFlag::NullTerminated};
+    StringView{ArrayView<const char>{}, StringViewFlag::NullTerminated};
+    /* Not null-terminated (string is just "hell") */
+    StringView{"hello", 4, StringViewFlag::NullTerminated};
+    StringView{ArrayView<const char>{"hello", 4}, StringViewFlag::NullTerminated};
     CORRADE_COMPARE(out,
-        "Containers::StringView: can't use StringViewFlag::NullTerminated with null data\n");
+        "Containers::StringView: Containers::StringViewFlag::NullTerminated expects non-null null-terminated data\n"
+        "Containers::StringView: Containers::StringViewFlag::NullTerminated expects non-null null-terminated data\n"
+        "Containers::StringView: Containers::StringViewFlag::NullTerminated expects non-null null-terminated data\n"
+        "Containers::StringView: Containers::StringViewFlag::NullTerminated expects non-null null-terminated data\n");
 }
 
 /* Without a corresponding SFINAE check in the std::nullptr_t constructor, this
@@ -774,12 +813,17 @@ template<class T> void StringViewTest::convertArrayView() {
     CORRADE_COMPARE(array.size(), 7); /* includes the null terminator */
 
     BasicStringView<T> string = array;
-    CORRADE_COMPARE(string.size(), 7); /* keeps the same size */
+    /* Leeps the same size, thus the null terminator is part of the string and
+       the string itself is thus *not* null terminated */
+    CORRADE_COMPARE(string.size(), 7);
     CORRADE_COMPARE(string.flags(), StringViewFlags{});
     CORRADE_COMPARE(static_cast<const void*>(string.data()), &data[0]);
 
-    BasicStringView<T> string2 = {array, StringViewFlag::NullTerminated};
-    CORRADE_COMPARE(string2.size(), 7); /* keeps the same size */
+    /* For this we actually need to have a null-terminated view to not trip on
+       an assert */
+    ArrayView<T> arrayNullTerminated = {data, 6};
+    BasicStringView<T> string2 = {arrayNullTerminated, StringViewFlag::NullTerminated};
+    CORRADE_COMPARE(string2.size(), 6); /* keeps the same size */
     CORRADE_COMPARE(string2.flags(), StringViewFlag::NullTerminated);
     CORRADE_COMPARE(static_cast<const void*>(string2.data()), &data[0]);
 
@@ -1473,17 +1517,17 @@ void StringViewTest::splitOnAny() {
 
     /* No delimiters */
     CORRADE_COMPARE_AS("abcdef"_s.splitOnAnyWithoutEmptyParts(delimiters),
-        array({"abcdef"_s}),
+        arrayView({"abcdef"_s}),
         TestSuite::Compare::Container);
 
     /* Common case */
     CORRADE_COMPARE_AS("ab:c;def"_s.splitOnAnyWithoutEmptyParts(delimiters),
-        array({"ab"_s, "c"_s, "def"_s}),
+        arrayView({"ab"_s, "c"_s, "def"_s}),
         TestSuite::Compare::Container);
 
     /* Empty parts */
     CORRADE_COMPARE_AS("ab:c;;def."_s.splitOnAnyWithoutEmptyParts(delimiters),
-        array({"ab"_s, "c"_s, "def"_s}),
+        arrayView({"ab"_s, "c"_s, "def"_s}),
         TestSuite::Compare::Container);
 }
 
@@ -1522,8 +1566,26 @@ void StringViewTest::splitOnAnyFlags() {
 
 void StringViewTest::splitOnWhitespace() {
     CORRADE_COMPARE_AS("ab c  \t \ndef\r"_s.splitOnWhitespaceWithoutEmptyParts(),
-        array({"ab"_s, "c"_s, "def"_s}),
+        arrayView({"ab"_s, "c"_s, "def"_s}),
         TestSuite::Compare::Container);
+}
+
+void StringViewTest::splitOnWhitespaceStlIsspaceCompatibility() {
+    /* Verifies that it splits on exactly the same characters as the ones
+       recognized by std::isspace() */
+    for(int c = 0; c != 256; ++c) {
+        CORRADE_ITERATION(c);
+
+        /* Explicit size to test with c being '\0' as well */
+        const char data[]{'h', 'e', 'y', char(c), 't', 'h', 'e', 'r', 'e'};
+        Containers::StringView string{data, 9};
+
+        CORRADE_COMPARE_AS(string.splitOnWhitespaceWithoutEmptyParts(),
+            std::isspace(c) ?
+                arrayView({"hey"_s, "there"_s}) :
+                arrayView({string}),
+            TestSuite::Compare::Container);
+    }
 }
 
 void StringViewTest::splitNullView() {
@@ -1997,6 +2059,24 @@ void StringViewTest::trimmed() {
     CORRADE_COMPARE("oubya"_s.trimmedPrefix("aeiyou"), "bya");
     CORRADE_COMPARE("oubya"_s.trimmedSuffix("aeiyou"), "oub");
     CORRADE_COMPARE("oubya"_s.trimmed("aeiyou"), "b");
+}
+
+void StringViewTest::trimmedStlIsspaceCompatibility() {
+    /* Verifies that it trims exactly the same characters as the ones
+       recognized by std::isspace() */
+    for(int c = 0; c != 256; ++c) {
+        CORRADE_ITERATION(c);
+
+        /* Explicit size to test with c being '\0' as well */
+        const char data[]{char(c)};
+        Containers::StringView string{data, 1};
+
+        /* std::isspace() doesn't return just 0 or 1 but for example 8192
+           (wtf!), have to coerce into a bool to compare properly */
+        CORRADE_COMPARE(!string.trimmed(), !!std::isspace(c));
+        CORRADE_COMPARE(!string.trimmedPrefix(), !!std::isspace(c));
+        CORRADE_COMPARE(!string.trimmedSuffix(), !!std::isspace(c));
+    }
 }
 
 void StringViewTest::trimmedFlags() {
@@ -3484,20 +3564,6 @@ void StringViewTest::countCharacterUnalignedLessThanOneVector() {
     for(char& i: string)
         i = 'X';
     CORRADE_COMPARE(string.count('X'), string.size());
-}
-
-void StringViewTest::debugFlag() {
-    Containers::String out;
-
-    Debug{&out} << StringViewFlag::Global << StringViewFlag(0xf0f0u);
-    CORRADE_COMPARE(out, "Containers::StringViewFlag::Global Containers::StringViewFlag(0xf0f0)\n");
-}
-
-void StringViewTest::debugFlags() {
-    Containers::String out;
-
-    Debug{&out} << (StringViewFlag::Global|StringViewFlag::NullTerminated) << StringViewFlags{};
-    CORRADE_COMPARE(out, "Containers::StringViewFlag::Global|Containers::StringViewFlag::NullTerminated Containers::StringViewFlags{}\n");
 }
 
 void StringViewTest::debug() {

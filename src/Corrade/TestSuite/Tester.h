@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -30,7 +30,7 @@
  * @brief Class @ref Corrade::TestSuite::Tester, @ref Corrade::TestSuite::TestCaseDescriptionSourceLocation, macros @ref CORRADE_TEST_MAIN(), @ref CORRADE_VERIFY(), @ref CORRADE_COMPARE(), @ref CORRADE_COMPARE_AS(), @ref CORRADE_COMPARE_WITH(), @ref CORRADE_EXPECT_FAIL(), @ref CORRADE_EXPECT_FAIL_IF(), @ref CORRADE_INFO(), @ref CORRADE_WARN(), @ref CORRADE_FAIL(), @ref CORRADE_FAIL_IF(), @ref CORRADE_SKIP(), @ref CORRADE_SKIP_IF_NO_ASSERT(), @ref CORRADE_SKIP_IF_NO_DEBUG_ASSERT(), @ref CORRADE_ITERATION(), @ref CORRADE_BENCHMARK()
  */
 
-#include <cstdint>
+#include <cstdint> /* std::uint64_t */
 #include <initializer_list>
 
 #include "Corrade/Containers/Pointer.h"
@@ -38,7 +38,7 @@
 #include "Corrade/TestSuite/Compare/FloatingPoint.h"
 #include "Corrade/TestSuite/visibility.h"
 #include "Corrade/Utility/Debug.h"
-#include "Corrade/Utility/Macros.h"
+#include "Corrade/Utility/Macros.h" /* CORRADE_FUNCTION, _CORRADE_HELPER_PASTE */
 
 #ifdef CORRADE_BUILD_DEPRECATED
 /* Some arguments used to be a std::string, so provide implicit conversion to a
@@ -556,7 +556,7 @@ are supported.
 
 @note Keep in mind that older versions of ADB and Android do not correctly
     propagate the exit code to caller, which may result in your test failures
-    being silently ignored. See [Android Issue 3254](http://web.archive.org/web/20160806094132/https://code.google.com/p/android/issues/detail?id=3254)
+    being silently ignored. See [Android Issue 3254](https://web.archive.org/web/20160806094132/https://code.google.com/p/android/issues/detail?id=3254)
     for possible workarounds. The @ref corrade-cmake-add-test "corrade_add_test()"
     CMake macro also works around this issue.
 
@@ -668,10 +668,10 @@ class CORRADE_TESTSUITE_EXPORT Tester {
                  * without having the tester complaining about them.
                  *
                  * Views that have both @ref Containers::StringViewFlag::Global
-                 * and @ref Containers::StringViewFlag::NullTerminated set
-                 * (such as coming from a @ref Containers::StringView literal)
-                 * will be used without having to make an owned string copy
-                 * internally.
+                 * and @relativeref{Containers::StringViewFlag,NullTerminated}
+                 * set (such as coming from a @ref Containers::StringView
+                 * literal) will be used without having to make an owned string
+                 * copy internally.
                  * @see @ref arguments()
                  */
                 TesterConfiguration& setSkippedArgumentPrefixes(std::initializer_list<Containers::StringView> prefixes);
@@ -696,10 +696,10 @@ class CORRADE_TESTSUITE_EXPORT Tester {
                  * exist, no check is done.
                  *
                  * A view that has both @ref Containers::StringViewFlag::Global
-                 * and @ref Containers::StringViewFlag::NullTerminated set
-                 * (such as coming from a @ref Containers::StringView literal)
-                 * will be used without having to make an owned string copy
-                 * internally.
+                 * and @relativeref{Containers::StringViewFlag,NullTerminated}
+                 * set (such as coming from a @ref Containers::StringView
+                 * literal) will be used without having to make an owned string
+                 * copy internally.
                  * @partialsupport Available only on Linux.
                  */
                 TesterConfiguration& setCpuScalingGovernorFile(Containers::StringView filename);
@@ -1082,9 +1082,9 @@ class CORRADE_TESTSUITE_EXPORT Tester {
             /* "warning: parameter ‘benchmarkBegin’ set but not used", is that
                some GCC 13 regression? I thought such silly warnings where a
                static_cast made a variable look like being unused were bugs
-               from the GCC 4.8 and MSVC 2015 era. Happens on GCC 14 as
-               well. */
-            #if defined(CORRADE_TARGET_GCC) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ == 14
+               from the GCC 4.8 and MSVC 2015 era. Happens on GCC 14 *and* 15
+               as well, but I still hope version 16 fixes it. */
+            #if defined(CORRADE_TARGET_GCC) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 13 && __GNUC__ < 16
             static_cast<void>(benchmarkBegin);
             static_cast<void>(benchmarkEnd);
             #endif
@@ -1258,9 +1258,9 @@ class CORRADE_TESTSUITE_EXPORT Tester {
          * fully-qualified class name.
          *
          * A view that has both @ref Containers::StringViewFlag::Global and
-         * @ref Containers::StringViewFlag::NullTerminated set (such as coming
-         * from a @ref Containers::StringView literal) will be used without
-         * having to make an owned string copy internally.
+         * @relativeref{Containers::StringViewFlag,NullTerminated} set (such as
+         * coming from a @ref Containers::StringView literal) will be used
+         * without having to make an owned string copy internally.
          * @see @ref setTestCaseName(), @ref setTestCaseTemplateName(),
          *      @ref setTestCaseDescription()
          */
@@ -1283,9 +1283,9 @@ class CORRADE_TESTSUITE_EXPORT Tester {
          * @snippet TestSuite.cpp Tester-setTestCaseName
          *
          * A view that has both @ref Containers::StringViewFlag::Global and
-         * @ref Containers::StringViewFlag::NullTerminated set (such as coming
-         * from a @ref Containers::StringView literal) will be used without
-         * having to make an owned string copy internally.
+         * @relativeref{Containers::StringViewFlag,NullTerminated} set (such as
+         * coming from a @ref Containers::StringView literal) will be used
+         * without having to make an owned string copy internally.
          * @see @ref setTestCaseTemplateName(), @ref setTestName(),
          *      @ref setTestCaseDescription(), @ref CORRADE_FUNCTION
          */
@@ -1310,9 +1310,9 @@ class CORRADE_TESTSUITE_EXPORT Tester {
          * @snippet TestSuite.cpp Tester-setTestCaseTemplateName
          *
          * A view that has both @ref Containers::StringViewFlag::Global and
-         * @ref Containers::StringViewFlag::NullTerminated set (such as coming
-         * from a @ref Containers::StringView literal) will be used without
-         * having to make an owned string copy internally.
+         * @relativeref{Containers::StringViewFlag,NullTerminated} set (such as
+         * coming from a @ref Containers::StringView literal) will be used
+         * without having to make an owned string copy internally.
          * @see @ref setTestCaseName(), @ref setTestName(),
          *      @ref setTestCaseDescription(), @ref CORRADE_FUNCTION
          */
@@ -1356,9 +1356,9 @@ class CORRADE_TESTSUITE_EXPORT Tester {
          * example.
          *
          * A view that has both @ref Containers::StringViewFlag::Global and
-         * @ref Containers::StringViewFlag::NullTerminated set (such as coming
-         * from a @ref Containers::StringView literal) will be used without
-         * having to make an owned string copy internally.
+         * @relativeref{Containers::StringViewFlag,NullTerminated} set (such as
+         * coming from a @ref Containers::StringView literal) will be used
+         * without having to make an owned string copy internally.
          * @see @ref setTestName(), @ref setTestCaseName(),
          *      @ref setTestCaseTemplateName()
          */
@@ -1391,9 +1391,9 @@ class CORRADE_TESTSUITE_EXPORT Tester {
          * provides the name for the unit measured, for example @cpp "wall time" @ce.
          *
          * A view that has both @ref Containers::StringViewFlag::Global and
-         * @ref Containers::StringViewFlag::NullTerminated set (such as coming
-         * from a @ref Containers::StringView literal) will be used without
-         * having to make an owned string copy internally.
+         * @relativeref{Containers::StringViewFlag,NullTerminated} set (such as
+         * coming from a @ref Containers::StringView literal) will be used
+         * without having to make an owned string copy internally.
          */
         void setBenchmarkName(Containers::StringView name);
         /* So people aren't forced to include StringView if they don't want */
@@ -1490,10 +1490,8 @@ class CORRADE_TESTSUITE_EXPORT Tester {
                 Printer();
                 Debug debug();
 
-                /* There's a std::ostringstream inside (yes, ew); don't want
-                   that in a header */
-                struct Data;
-                Containers::Pointer<Data> _data;
+                /* Don't want to include the whole String in this header */
+                Containers::Pointer<Containers::String> _data;
         };
 
         class CORRADE_TESTSUITE_EXPORT ExpectedFailure: public Printer {
@@ -1584,7 +1582,16 @@ class CORRADE_TESTSUITE_EXPORT Tester {
 
                 ~BenchmarkRunner();
 
-                const char* begin() const { return nullptr; }
+                /* The end() has to be deinlined because it accesses the
+                   privately defined Tester::_state; the begin(), which returns
+                   nullptr, has to be deinlined because GCC 15 in optimized
+                   builds compiles away the null pointer arithmetic, causing it
+                   to iterate forever. Very useful optimization, thank you.
+
+                   Those being non-inline shouldn't be a problem as the
+                   range-for loop in CORRADE_BENCHMARK() should cache them both
+                   internally. */
+                const char* begin() const;
                 const char* end() const;
 
             private:
@@ -2251,7 +2258,8 @@ template<class T, class U, class V> void Tester::compareWith(Comparator<T>& comp
 }
 
 template<class T> void Tester::verify(const char* expression, T&& value) {
-    if(value) verifyInternal(expression, true);
+    if(value)
+        verifyInternal(expression, true);
     else verifyInternal(expression, false);
 }
 

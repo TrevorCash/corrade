@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -27,7 +27,7 @@
 */
 
 /** @file
- * @brief Class @ref Corrade::Utility::Json, @ref Corrade::Utility::JsonToken
+ * @brief Class @ref Corrade::Utility::Json, @ref Corrade::Utility::JsonToken, @ref Corrade::Utility::JsonTokenData, @ref Corrade::Utility::JsonObjectItem, @ref Corrade::Utility::JsonArrayItem, @ref Corrade::Utility::JsonIterator, @ref Corrade::Utility::JsonObjectIterator, @ref Corrade::Utility::JsonArrayIterator, @ref Corrade::Utility::JsonView, @ref Corrade::Utility::JsonObjectView, @ref Corrade::Utility::JsonArrayView
  * @m_since_latest
  */
 
@@ -39,6 +39,8 @@
 #include "Corrade/Utility/visibility.h"
 
 namespace Corrade { namespace Utility {
+
+namespace Implementation { struct JsonData; }
 
 /**
 @brief JSON parser
@@ -57,7 +59,9 @@ for fast lookup of keys and array indices --- if that's desired, users are
 encouraged to build them on top of the parsed output.
 
 The @ref JsonWriter class provides a write-only counterpart for saving a JSON
-file.
+file. It can also directly write contents of a @ref Json instance, see
+@ref Utility-JsonWriter-tokens and a corresponding @ref json-pretty-printer
+example.
 
 @experimental
 
@@ -228,7 +232,9 @@ depth-first ordering, the first child token (if any) is ordered right after
 its parent token, and together with @ref JsonToken::childCount(), which is the
 count of all nested tokens, it's either possible to dive into the child token
 tree using @ref JsonToken::firstChild() or @ref JsonToken::children() or skip
-after the child token tree using @ref JsonToken::next().
+after the child token tree using @ref JsonToken::next(). These APIs return
+@ref JsonView and @ref JsonIterator instances allowing for convenient use in
+both range-for and manual loops.
 
 @section Utility-Json-representation Internal representation
 
@@ -238,19 +244,60 @@ internal copy, and all token data will point to it as well. Otherwise, or if
 @ref fromFile() is used, a local copy is made, and tokens point to the copy
 instead.
 
-A @ref JsonToken is 16 bytes on 32-bit systems and 24 bytes on 64-bit systems,
-containing view pointer, size and child count. When a literal or numeric value
-is parsed, it's stored inside. Simply put, the representation exploits the
-fact that a token either has children or is a value, but never both. For
-strings the general assumption is that most of them (and especially object
-keys) don't contain any escape characters and thus can be returned as views on
-the input string. Strings containing escape characters are allocated
+A @ref JsonToken is an opaque reference type pointing to the originating
+@ref Json instance and a concrete position in an array of @ref JsonTokenData.
+The @ref JsonTokenData is 16 bytes on 32-bit systems and 24 bytes on 64-bit
+systems, containing view pointer, size and child count. When a literal or
+numeric value is parsed, it's stored inside. Simply put, the representation
+exploits the fact that a token either has children or is a value, but never
+both. For strings the general assumption is that most of them (and especially
+object keys) don't contain any escape characters and thus can be returned as
+views on the input string. Strings containing escape characters are allocated
 separately, either upfront if @ref Option::ParseStrings is set (or if
 @ref Option::ParseStringKeys is set and object keys contain escaped values), or
 on-demand if @ref parseStrings() / @ref parseStringKeys() / @ref parseString()
 is used.
 
-@see @ref JsonView, @ref JsonArrayItem, @ref JsonObjectItem
+@section Utility-Json-from-tokens Creating an instance from externally parsed tokens
+
+The internal representation isn't limited to just JSON, you can create a
+@ref Json instance describing any JSON-compatible format --- i.e., arbitrarily
+nested arrays, objects, null, boolean, numeric and string values. The
+@ref Json(Containers::String&&, Containers::Array<JsonTokenData>&&, Containers::Array<JsonTokenOffsetSize>&&, Containers::Array<Containers::String>&&)
+constructor takes the input string the tokens refer to, list of
+@ref JsonTokenData instances containing the actual parsed values, corresponding
+@ref JsonTokenOffsetSize instances matching the token with the input string, if
+applicable, and an array of parsed strings if needed. The following snippet
+shows how a [JSON5](https://json5.org) source could be expressed this way ---
+tokens that are compatible with JSON refer to the input, other tokens such as
+unquoted object keys or hexadecimal numbers contain just the parsed value:
+
+@snippet Utility.cpp Json-from-tokens
+
+Ultimately, the instance can also be just a sequence of parsed tokens alone,
+with no input string specified, which is useful in case the input is a binary
+such as a [CBOR](https://en.wikipedia.org/wiki/CBOR):
+
+@snippet Utility.cpp Json-from-tokens-alone
+
+With either of the above, the @ref Json instance behaves the same as if it was
+created from a JSON source --- you can iterate it, search for array items or
+object keys and can access token values as well. Numeric tokens can be also
+reparsed with a different type if needed, but only if they were specified with
+a valid non-empty @ref JsonTokenOffsetSize. So for example you could call
+@ref parseDouble() on the @cpp -1.5 @ce JSON5 token and get a @cpp double @ce
+instead of a @cpp float @ce, but not on the hexadecimal @cpp 0xcafe @ce value
+that doesn't have any input string associated.
+
+@snippet Utility.cpp Json-from-tokens-access
+
+The constructor as well as particular @ref JsonTokenData constructors have
+various checks in place to ensure the supplied representation is consistent and
+matches expectations of the internal implementation. See their documentation
+for more information.
+@see @ref JsonArrayItem, @ref JsonObjectItem, @ref JsonIterator,
+    @ref JsonArrayIterator, @ref JsonObjectIterator, @ref JsonView,
+    @ref JsonObjectView, @ref JsonArrayView
 */
 class CORRADE_UTILITY_EXPORT Json {
     public:
@@ -450,6 +497,37 @@ class CORRADE_UTILITY_EXPORT Json {
         static Containers::Optional<Json> fromFile(Containers::StringView filename, Options options);
         #endif
 
+        /**
+         * @brief Construct from existing token data
+         * @param string    Input text representation the @p tokenOffsetsSizes
+         *      point to
+         * @param tokens    Token data
+         * @param tokenOffsetsSizes  Token offsets and sizes
+         * @param strings   Parsed escaped strings the @p tokens point to.
+         *
+         * Meant to be used to make externally parsed data available through a
+         * JSON-compatible interface. See @ref Utility-Json-from-tokens for
+         * more information and a detailed usage example. Expects that
+         * @p tokens and @p tokenOffsetsSizes are non-empty, have the same size
+         * and there's at most one root token. Root object and array token
+         * child counts are expected to not be larger than the remaining count
+         * of tokens in the @p tokens array, child counts of nested object and
+         * array tokens are expected to not go outside of the parent object or
+         * array token count. Immediate object token children are expected to
+         * be strings marked as keys, with each having at least one child
+         * token. Non-escaped string tokens are expected to have the token at
+         * least two bytes large for the initial and final quote character,
+         * indices of escaped string tokens are expected to be less than the
+         * @p strings array size. Strings that are not object keys are expected
+         * to not be marked as such.
+         *
+         * @attention As this functionality is closely tied to the internal
+         *      data representation, it may change whenever the internal
+         *      representation changes with little possibility to keep
+         *      backwards compatibility.
+         */
+        explicit Json(Containers::String&& string, Containers::Array<JsonTokenData>&& tokens, Containers::Array<JsonTokenOffsetSize>&& tokenOffsetsSizes, Containers::Array<Containers::String>&& strings);
+
         /** @brief Copying is not allowed */
         Json(const Json&) = delete;
 
@@ -471,16 +549,16 @@ class CORRADE_UTILITY_EXPORT Json {
          * and is always present, the rest is ordered in a depth-first manner
          * as described in @ref Utility-Json-tokenization.
          */
-        Containers::ArrayView<const JsonToken> tokens() const;
+        JsonView tokens() const;
 
         /**
          * @brief Root JSON token
          *
-         * Always present. Tts @ref JsonToken::children() (if any) contain the
+         * Always present. Its @ref JsonToken::children() (if any) contain the
          * whole document ordered in a depth-first manner as described in
          * @ref Utility-Json-tokenization.
          */
-        const JsonToken& root() const;
+        JsonToken root() const;
 
         /**
          * @brief Parse objects, arrays, `null`, `true` and `false` values in given token tree
@@ -514,7 +592,7 @@ class CORRADE_UTILITY_EXPORT Json {
          * during the initial call or with @ref parseObject() that parses both
          * an object and its keys.
          */
-        bool parseLiterals(const JsonToken& token);
+        bool parseLiterals(JsonToken token);
 
         /**
          * @brief Parse numbers in given token tree as 64-bit floating-point values
@@ -536,7 +614,7 @@ class CORRADE_UTILITY_EXPORT Json {
          * @ref parseDouble().
          * @see @ref parseFloats(), @ref parseUnsignedInts(), @ref parseInts()
          */
-        bool parseDoubles(const JsonToken& token);
+        bool parseDoubles(JsonToken token);
 
         /**
          * @brief Parse numbers in given token tree as 32-bit floating-point values
@@ -557,7 +635,7 @@ class CORRADE_UTILITY_EXPORT Json {
          * @ref parseFloat().
          * @see @ref parseDoubles(), @ref parseUnsignedInts(), @ref parseInts()
          */
-        bool parseFloats(const JsonToken& token);
+        bool parseFloats(JsonToken token);
 
         /**
          * @brief Parse numbers in given token tree as unsigned 32-bit integer values
@@ -578,7 +656,7 @@ class CORRADE_UTILITY_EXPORT Json {
          * @see @ref parseDoubles(), @ref parseInts(),
          *      @ref parseUnsignedLongs(), @ref parseSizes()
          */
-        bool parseUnsignedInts(const JsonToken& token);
+        bool parseUnsignedInts(JsonToken token);
 
         /**
          * @brief Parse numbers in given token tree as signed 32-bit integer values
@@ -599,7 +677,7 @@ class CORRADE_UTILITY_EXPORT Json {
          * @see @ref parseDoubles(), @ref parseUnsignedInts(),
          *      @ref parseLongs(), @ref parseSizes()
          */
-        bool parseInts(const JsonToken& token);
+        bool parseInts(JsonToken token);
 
         /**
          * @brief Parse numbers in given token tree as unsigned 52-bit integer values
@@ -621,7 +699,7 @@ class CORRADE_UTILITY_EXPORT Json {
          * @see @ref parseDoubles(), @ref parseLongs(),
          *      @ref parseUnsignedInts(), @ref parseSizes()
          */
-        bool parseUnsignedLongs(const JsonToken& token);
+        bool parseUnsignedLongs(JsonToken token);
 
         /**
          * @brief Parse numbers in given token tree as signed 53-bit integer values
@@ -642,7 +720,7 @@ class CORRADE_UTILITY_EXPORT Json {
          * @see @ref parseDoubles(), @ref parseUnsignedLongs(),
          *      @ref parseInts(), @ref parseSizes()
          */
-        bool parseLongs(const JsonToken& token);
+        bool parseLongs(JsonToken token);
 
         /**
          * @brief Parse numbers in given token tree as size values
@@ -658,7 +736,7 @@ class CORRADE_UTILITY_EXPORT Json {
          * Checking a single token for a numeric type and parsing it as a size
          * can be done using @ref parseSize().
          */
-        bool parseSizes(const JsonToken& token);
+        bool parseSizes(JsonToken token);
 
         /**
          * @brief Parse string keys in given token tree
@@ -679,7 +757,7 @@ class CORRADE_UTILITY_EXPORT Json {
          * for a string type and parsing it can be done using
          * @ref parseString().
          */
-        bool parseStringKeys(const JsonToken& token);
+        bool parseStringKeys(JsonToken token);
 
         /**
          * @brief Parse strings in given token tree
@@ -699,7 +777,7 @@ class CORRADE_UTILITY_EXPORT Json {
          * for a string type and parsing it can be done using
          * @ref parseString().
          */
-        bool parseStrings(const JsonToken& token);
+        bool parseStrings(JsonToken token);
 
         /**
          * @brief Check and parse an object token
@@ -712,7 +790,7 @@ class CORRADE_UTILITY_EXPORT Json {
          * @p token references a token owned by this instance.
          * @see @ref JsonToken::type(), @ref JsonToken::asObject()
          */
-        Containers::Optional<JsonObjectView> parseObject(const JsonToken& token);
+        Containers::Optional<JsonObjectView> parseObject(JsonToken token);
 
         /**
          * @brief Check and parse an array token
@@ -729,7 +807,7 @@ class CORRADE_UTILITY_EXPORT Json {
          *      @ref parseUnsignedLongArray(), @ref parseLongArray(),
          *      @ref parseSizeArray(), @ref parseStringArray()
          */
-        Containers::Optional<JsonArrayView> parseArray(const JsonToken& token);
+        Containers::Optional<JsonArrayView> parseArray(JsonToken token);
 
         /**
          * @brief Check and parse a null token
@@ -741,7 +819,7 @@ class CORRADE_UTILITY_EXPORT Json {
          * Expects that @p token references a token owned by this instance.
          * @see @ref JsonToken::type(), @ref JsonToken::asNull()
          */
-        Containers::Optional<std::nullptr_t> parseNull(const JsonToken& token);
+        Containers::Optional<std::nullptr_t> parseNull(JsonToken token);
 
         /**
          * @brief Check and parse a boolean token
@@ -754,7 +832,7 @@ class CORRADE_UTILITY_EXPORT Json {
          * @see @ref JsonToken::type(), @ref JsonToken::asBool(),
          *      @ref parseBoolArray()
          */
-        Containers::Optional<bool> parseBool(const JsonToken& token);
+        Containers::Optional<bool> parseBool(JsonToken token);
 
         /**
          * @brief Check and parse a 64-bit floating-point token
@@ -768,7 +846,7 @@ class CORRADE_UTILITY_EXPORT Json {
          * @see @ref JsonToken::type(), @ref JsonToken::asDouble(),
          *      @ref parseDoubleArray()
          */
-        Containers::Optional<double> parseDouble(const JsonToken& token);
+        Containers::Optional<double> parseDouble(JsonToken token);
 
         /**
          * @brief Check and parse a 32-bit floating-point token
@@ -784,7 +862,7 @@ class CORRADE_UTILITY_EXPORT Json {
          * @see @ref JsonToken::type(), @ref JsonToken::asFloat(),
          *      @ref parseFloatArray()
          */
-        Containers::Optional<float> parseFloat(const JsonToken& token);
+        Containers::Optional<float> parseFloat(JsonToken token);
 
         /**
          * @brief Check and parse an unsigned 32-bit integer token
@@ -799,7 +877,7 @@ class CORRADE_UTILITY_EXPORT Json {
          * @see @ref JsonToken::type(), @ref JsonToken::asUnsignedInt(),
          *      @ref parseSize(), @ref parseUnsignedIntArray()
          */
-        Containers::Optional<std::uint32_t> parseUnsignedInt(const JsonToken& token);
+        Containers::Optional<std::uint32_t> parseUnsignedInt(JsonToken token);
 
         /**
          * @brief Check and parse a signed 32-bit integer token
@@ -814,7 +892,7 @@ class CORRADE_UTILITY_EXPORT Json {
          * @see @ref JsonToken::type(), @ref JsonToken::asInt(),
          *      @ref parseIntArray()
          */
-        Containers::Optional<std::int32_t> parseInt(const JsonToken& token);
+        Containers::Optional<std::int32_t> parseInt(JsonToken token);
 
         /**
          * @brief Check and parse an unsigned 52-bit integer token
@@ -830,7 +908,7 @@ class CORRADE_UTILITY_EXPORT Json {
          * @see @ref JsonToken::type(), @ref JsonToken::asUnsignedLong(),
          *      @ref parseSize(), @ref parseUnsignedLongArray()
          */
-        Containers::Optional<std::uint64_t> parseUnsignedLong(const JsonToken& token);
+        Containers::Optional<std::uint64_t> parseUnsignedLong(JsonToken token);
 
         /**
          * @brief Check and parse a signed 53-bit integer token
@@ -846,7 +924,7 @@ class CORRADE_UTILITY_EXPORT Json {
          * @see @ref JsonToken::type(), @ref JsonToken::asLong(),
          *      @ref parseLongArray()
          */
-        Containers::Optional<std::int64_t> parseLong(const JsonToken& token);
+        Containers::Optional<std::int64_t> parseLong(JsonToken token);
 
         /**
          * @brief Check and parse a size token
@@ -860,7 +938,7 @@ class CORRADE_UTILITY_EXPORT Json {
          * @see @ref JsonToken::type(), @ref JsonToken::asSize(),
          *      @ref parseSizeArray()
          */
-        Containers::Optional<std::size_t> parseSize(const JsonToken& token);
+        Containers::Optional<std::size_t> parseSize(JsonToken token);
 
         /**
          * @brief Check and parse a string token
@@ -877,7 +955,7 @@ class CORRADE_UTILITY_EXPORT Json {
          * @see @ref JsonToken::type(), @ref JsonToken::asString(),
          *      @ref parseStringArray()
          */
-        Containers::Optional<Containers::StringView> parseString(const JsonToken& token);
+        Containers::Optional<Containers::StringView> parseString(JsonToken token);
 
         /**
          * @brief Check and parse a bit array
@@ -896,14 +974,14 @@ class CORRADE_UTILITY_EXPORT Json {
          *      @ref parseBool(), @ref parseArray(),
          *      @ref JsonToken::asBitArray()
          */
-        Containers::Optional<Containers::StridedBitArrayView1D> parseBitArray(const JsonToken& token, std::size_t expectedSize = 0);
+        Containers::Optional<Containers::StridedBitArrayView1D> parseBitArray(JsonToken token, std::size_t expectedSize = 0);
 
         #ifdef CORRADE_BUILD_DEPRECATED
         /**
          * @brief Check and parse a boolean array
          * @m_deprecated_since_latest Use @ref parseBitArray() instead.
          */
-        CORRADE_DEPRECATED("use parseBitArray() instead") Containers::Optional<Containers::StridedArrayView1D<const bool>> parseBoolArray(const JsonToken& token, std::size_t expectedSize = 0);
+        CORRADE_DEPRECATED("use parseBitArray() instead") Containers::Optional<Containers::StridedArrayView1D<const bool>> parseBoolArray(JsonToken token, std::size_t expectedSize = 0);
         #endif
 
         /**
@@ -924,7 +1002,7 @@ class CORRADE_UTILITY_EXPORT Json {
          *      @ref parseDouble(), @ref parseArray(),
          *      @ref JsonToken::asDoubleArray()
          */
-        Containers::Optional<Containers::StridedArrayView1D<const double>> parseDoubleArray(const JsonToken& token, std::size_t expectedSize = 0);
+        Containers::Optional<Containers::StridedArrayView1D<const double>> parseDoubleArray(JsonToken token, std::size_t expectedSize = 0);
 
         /**
          * @brief Check and parse a 32-bit floating-point array
@@ -947,7 +1025,7 @@ class CORRADE_UTILITY_EXPORT Json {
          *      @ref parseFloat(), @ref parseArray(),
          *      @ref JsonToken::asFloatArray()
          */
-        Containers::Optional<Containers::StridedArrayView1D<const float>> parseFloatArray(const JsonToken& token, std::size_t expectedSize = 0);
+        Containers::Optional<Containers::StridedArrayView1D<const float>> parseFloatArray(JsonToken token, std::size_t expectedSize = 0);
 
         /**
          * @brief Check and parse an unsigned 32-bit integer array
@@ -969,7 +1047,7 @@ class CORRADE_UTILITY_EXPORT Json {
          *      @ref parseSizeArray(), @ref parseArray(),
          *      @ref JsonToken::asUnsignedIntArray(),
          */
-        Containers::Optional<Containers::StridedArrayView1D<const std::uint32_t>> parseUnsignedIntArray(const JsonToken& token, std::size_t expectedSize = 0);
+        Containers::Optional<Containers::StridedArrayView1D<const std::uint32_t>> parseUnsignedIntArray(JsonToken token, std::size_t expectedSize = 0);
 
         /**
          * @brief Check and parse a signed 32-bit integer array
@@ -989,7 +1067,7 @@ class CORRADE_UTILITY_EXPORT Json {
          *      @ref parseInts(), @ref parseInt(), @ref parseArray(),
          *      @ref JsonToken::asIntArray()
          */
-        Containers::Optional<Containers::StridedArrayView1D<const std::int32_t>> parseIntArray(const JsonToken& token, std::size_t expectedSize = 0);
+        Containers::Optional<Containers::StridedArrayView1D<const std::int32_t>> parseIntArray(JsonToken token, std::size_t expectedSize = 0);
 
         /**
          * @brief Check and parse an unsigned 52-bit integer array
@@ -1011,7 +1089,7 @@ class CORRADE_UTILITY_EXPORT Json {
          *      @ref parseSizeArray(), @ref parseArray(),
          *      @ref JsonToken::asUnsignedLongArray()
          */
-        Containers::Optional<Containers::StridedArrayView1D<const std::uint64_t>> parseUnsignedLongArray(const JsonToken& token, std::size_t expectedSize = 0);
+        Containers::Optional<Containers::StridedArrayView1D<const std::uint64_t>> parseUnsignedLongArray(JsonToken token, std::size_t expectedSize = 0);
 
         /**
          * @brief Check and parse a signed 52-bit integer array
@@ -1032,7 +1110,7 @@ class CORRADE_UTILITY_EXPORT Json {
          *      @ref parseLongs(), @ref parseLong(), @ref parseArray(),
          *      @ref JsonToken::asLongArray()
          */
-        Containers::Optional<Containers::StridedArrayView1D<const std::int64_t>> parseLongArray(const JsonToken& token, std::size_t expectedSize = 0);
+        Containers::Optional<Containers::StridedArrayView1D<const std::int64_t>> parseLongArray(JsonToken token, std::size_t expectedSize = 0);
 
         /**
          * @brief Check and parse a size array
@@ -1044,7 +1122,7 @@ class CORRADE_UTILITY_EXPORT Json {
          *      @ref parseSizes(), @ref parseSize(), @ref parseArray(),
          *      @ref JsonToken::asSizeArray()
          */
-        Containers::Optional<Containers::StridedArrayView1D<const std::size_t>> parseSizeArray(const JsonToken& token, std::size_t expectedSize = 0);
+        Containers::Optional<Containers::StridedArrayView1D<const std::size_t>> parseSizeArray(JsonToken token, std::size_t expectedSize = 0);
 
         /**
          * @brief Check and parse a string array
@@ -1065,9 +1143,11 @@ class CORRADE_UTILITY_EXPORT Json {
          *      @ref Json::Option::ParseStrings, @ref parseStrings(),
          *      @ref parseString(), @ref JsonToken::asStringArray()
          */
-        Containers::Optional<Containers::StringIterable> parseStringArray(const JsonToken& token, std::size_t expectedSize = 0);
+        Containers::Optional<Containers::StringIterable> parseStringArray(JsonToken token, std::size_t expectedSize = 0);
 
     private:
+        friend JsonToken; /* JsonTokenData constructor and data() needs _state access */
+
         struct State;
 
         explicit CORRADE_UTILITY_LOCAL Json();
@@ -1075,21 +1155,27 @@ class CORRADE_UTILITY_EXPORT Json {
         /* These are here because they need friended JsonToken and/or access to
            State */
         CORRADE_UTILITY_LOCAL void printFilePosition(Debug& out, Containers::StringView string) const;
+        CORRADE_UTILITY_LOCAL void printFilePosition(Debug& out, const JsonTokenData& token) const;
         CORRADE_UTILITY_LOCAL static Containers::Optional<Json> tokenize(Containers::StringView filename, std::size_t lineOffset, std::size_t columnOffset, Containers::StringView string);
         CORRADE_UTILITY_LOCAL static Containers::Optional<Json> tokenize(Containers::StringView filename, std::size_t lineOffset, std::size_t columnOffset, Containers::StringView string, Options options);
+        /* Used by all parse*Internal() below, is here and not on JsonTokenData
+           because it may eventually rely on data outside of given token. Is
+           static because JsonToken::data() has no access to the Json
+           instance, only to the state. */
+        CORRADE_UTILITY_LOCAL static Containers::StringView tokenData(const Implementation::JsonData& json, const JsonTokenData& token);
         /* These are here because they need friended JsonToken, they're not on
            JsonToken in order to print nice file/line info on error (and access
            the string cache in case of parseStringInternal()) */
-        CORRADE_UTILITY_LOCAL void parseObjectArrayInternal(JsonToken& token);
-        CORRADE_UTILITY_LOCAL bool parseNullInternal(const char* errorPrefix, JsonToken& token);
-        CORRADE_UTILITY_LOCAL bool parseBoolInternal(const char* errorPrefix, JsonToken& token);
-        CORRADE_UTILITY_LOCAL bool parseDoubleInternal(const char* errorPrefix, JsonToken& token);
-        CORRADE_UTILITY_LOCAL bool parseFloatInternal(const char* errorPrefix, JsonToken& token);
-        CORRADE_UTILITY_LOCAL bool parseUnsignedIntInternal(const char* errorPrefix, JsonToken& token);
-        CORRADE_UTILITY_LOCAL bool parseIntInternal(const char* errorPrefix, JsonToken& token);
-        CORRADE_UTILITY_LOCAL bool parseUnsignedLongInternal(const char* errorPrefix, JsonToken& token);
-        CORRADE_UTILITY_LOCAL bool parseLongInternal(const char* errorPrefix, JsonToken& token);
-        CORRADE_UTILITY_LOCAL bool parseStringInternal(const char* errorPrefix, JsonToken& token);
+        CORRADE_UTILITY_LOCAL void parseObjectArrayInternal(JsonTokenData& token);
+        CORRADE_UTILITY_LOCAL bool parseNullInternal(const char* errorPrefix, JsonTokenData& token);
+        CORRADE_UTILITY_LOCAL bool parseBoolInternal(const char* errorPrefix, JsonTokenData& token);
+        CORRADE_UTILITY_LOCAL bool parseDoubleInternal(const char* errorPrefix, JsonTokenData& token);
+        CORRADE_UTILITY_LOCAL bool parseFloatInternal(const char* errorPrefix, JsonTokenData& token);
+        CORRADE_UTILITY_LOCAL bool parseUnsignedIntInternal(const char* errorPrefix, JsonTokenData& token);
+        CORRADE_UTILITY_LOCAL bool parseIntInternal(const char* errorPrefix, JsonTokenData& token);
+        CORRADE_UTILITY_LOCAL bool parseUnsignedLongInternal(const char* errorPrefix, JsonTokenData& token);
+        CORRADE_UTILITY_LOCAL bool parseLongInternal(const char* errorPrefix, JsonTokenData& token);
+        CORRADE_UTILITY_LOCAL bool parseStringInternal(const char* errorPrefix, JsonTokenData& token);
 
         Containers::Pointer<State> _state;
 };
@@ -1110,9 +1196,7 @@ class CORRADE_UTILITY_EXPORT JsonToken {
          *
          * @see @ref type()
          */
-        enum class Type: std::uint64_t {
-            /* Needs to match the private flags */
-
+        enum class Type: std::uint8_t {
             /**
              * An object, @cb{.json} {} @ce. Its immediate children are
              * @ref Type::String keys, values are children of the keys. The
@@ -1120,30 +1204,14 @@ class CORRADE_UTILITY_EXPORT JsonToken {
              * @ref isParsed() is set always.
              * @see @ref children(), @ref firstChild(), @ref next()
              */
-            #ifndef CORRADE_TARGET_32BIT
-            Object
-                #ifndef DOXYGEN_GENERATING_OUTPUT
-                = 1ull << 61
-                #endif
-                ,
-            #else
-            Object = 1ull << 49,
-            #endif
+            Object,
 
             /**
              * An array, @cb{.json} [] @ce. Its immediate children are values.
              * @ref isParsed() is set always.
              * @see @ref children(), @ref firstChild(), @ref next()
              */
-            #ifndef CORRADE_TARGET_32BIT
-            Array
-                #ifndef DOXYGEN_GENERATING_OUTPUT
-                = 2ull << 61
-                #endif
-                ,
-            #else
-            Array = 2ull << 49,
-            #endif
+            Array,
 
             /**
              * A @cb{.json} null @ce value. Unless @ref isParsed() is set, the
@@ -1151,15 +1219,7 @@ class CORRADE_UTILITY_EXPORT JsonToken {
              * @see @ref asNull(), @ref Json::Option::ParseLiterals,
              *      @ref Json::parseLiterals(), @ref Json::parseNull()
              */
-            #ifndef CORRADE_TARGET_32BIT
-            Null
-                #ifndef DOXYGEN_GENERATING_OUTPUT
-                = 3ull << 61
-                #endif
-                ,
-            #else
-            Null = 3ull << 49,
-            #endif
+            Null,
 
             /**
              * A @cb{.json} true @ce or @cb{.json} false @ce value. Unless
@@ -1167,15 +1227,7 @@ class CORRADE_UTILITY_EXPORT JsonToken {
              * @see @ref asBool(), @ref Json::Option::ParseLiterals,
              *      @ref Json::parseLiterals(), @ref Json::parseBool()
              */
-            #ifndef CORRADE_TARGET_32BIT
-            Bool
-                #ifndef DOXYGEN_GENERATING_OUTPUT
-                = 4ull << 61
-                #endif
-                ,
-            #else
-            Bool = 4ull << 49,
-            #endif
+            Bool,
 
             /**
              * A number. Unless @ref isParsed() is set, the value is not
@@ -1196,15 +1248,7 @@ class CORRADE_UTILITY_EXPORT JsonToken {
              *      @ref Json::parseInt(), @ref Json::parseUnsignedLong(),
              *      @ref Json::parseLong(), @ref Json::parseSize()
              */
-            #ifndef CORRADE_TARGET_32BIT
-            Number
-                #ifndef DOXYGEN_GENERATING_OUTPUT
-                = 5ull << 61
-                #endif
-                ,
-            #else
-            Number = 5ull << 49,
-            #endif
+            Number,
 
             /**
              * A string. Unless @ref isParsed() is set, the value is not
@@ -1214,15 +1258,7 @@ class CORRADE_UTILITY_EXPORT JsonToken {
              *      @ref Json::parseStringKeys(), @ref Json::parseStrings(),
              *      @ref Json::parseString()
              */
-            #ifndef CORRADE_TARGET_32BIT
             String
-                #ifndef DOXYGEN_GENERATING_OUTPUT
-                = 6ull << 61
-                #endif
-                ,
-            #else
-            String = 6ull << 49,
-            #endif
         };
 
         /**
@@ -1230,9 +1266,9 @@ class CORRADE_UTILITY_EXPORT JsonToken {
          *
          * @see @ref parsedType()
          */
-        enum class ParsedType: std::uint64_t {
+        enum class ParsedType: std::uint8_t {
             /** Not parsed yet. */
-            None = 0,
+            None,
 
             /**
              * 64-bit floating-point value.
@@ -1241,15 +1277,7 @@ class CORRADE_UTILITY_EXPORT JsonToken {
              * @ref Json::fromString() or @ref Json::fromFile() or if
              * @ref Json::parseDoubles() is called later.
              */
-            #ifndef CORRADE_TARGET_32BIT
-            Double
-                #ifndef DOXYGEN_GENERATING_OUTPUT
-                = 1ull << 58
-                #endif
-                ,
-            #else
-            Double = 1ull << 29,
-            #endif
+            Double,
 
             /**
              * 32-bit floating-point value.
@@ -1259,15 +1287,7 @@ class CORRADE_UTILITY_EXPORT JsonToken {
              * @ref Json::parseFloats() is called later. Double-precision
              * values that can't be represented as a float are truncated.
              */
-            #ifndef CORRADE_TARGET_32BIT
-            Float
-                #ifndef DOXYGEN_GENERATING_OUTPUT
-                = 2ull << 58
-                #endif
-                ,
-            #else
-            Float = 2ull << 29,
-            #endif
+            Float,
 
             /**
              * 32-bit unsigned integer value.
@@ -1278,15 +1298,7 @@ class CORRADE_UTILITY_EXPORT JsonToken {
              * exponent, if they're negative or if they can't fit into 32 bits.
              * @see @ref ParsedType::Size, @ref Json::parseSizes()
              */
-            #ifndef CORRADE_TARGET_32BIT
-            UnsignedInt
-                #ifndef DOXYGEN_GENERATING_OUTPUT
-                = 3ull << 58
-                #endif
-                ,
-            #else
-            UnsignedInt = 3ull << 29,
-            #endif
+            UnsignedInt,
 
             /**
              * 32-bit signed integer value.
@@ -1296,15 +1308,7 @@ class CORRADE_UTILITY_EXPORT JsonToken {
              * have a non-zero fractional part, if they have an exponent or if
              * they can't fit into 32 bits.
              */
-            #ifndef CORRADE_TARGET_32BIT
-            Int
-                #ifndef DOXYGEN_GENERATING_OUTPUT
-                = 4ull << 58
-                #endif
-                ,
-            #else
-            Int = 4ull << 29,
-            #endif
+            Int,
 
             /**
              * 52-bit unsigned integer value.
@@ -1316,15 +1320,7 @@ class CORRADE_UTILITY_EXPORT JsonToken {
              * (which is the representable unsigned integer range in a JSON).
              * @see @ref ParsedType::Size, @ref Json::parseSizes()
              */
-            #ifndef CORRADE_TARGET_32BIT
-            UnsignedLong
-                #ifndef DOXYGEN_GENERATING_OUTPUT
-                = 5ull << 58
-                #endif
-                ,
-            #else
-            UnsignedLong = 5ull << 29,
-            #endif
+            UnsignedLong,
 
             /**
              * 53-bit signed integer value.
@@ -1335,15 +1331,7 @@ class CORRADE_UTILITY_EXPORT JsonToken {
              * exponent, if they're negative or if they can't fit into 53 bits
              * (which is the representable signed integer range in a JSON).
              */
-            #ifndef CORRADE_TARGET_32BIT
-            Long
-                #ifndef DOXYGEN_GENERATING_OUTPUT
-                = 6ull << 58
-                #endif
-                ,
-            #else
-            Long = 6ull << 29,
-            #endif
+            Long,
 
             /**
              * Size value. Alias to @ref ParsedType::UnsignedInt or
@@ -1362,16 +1350,29 @@ class CORRADE_UTILITY_EXPORT JsonToken {
                 ,
 
             /** An object, array, null, bool or a string value. */
-            #ifndef CORRADE_TARGET_32BIT
-            Other
-                #ifndef DOXYGEN_GENERATING_OUTPUT
-                = 7ull << 58
-                #endif
-                ,
-            #else
-            Other = 7ull << 29,
-            #endif
+            Other = Long + 1
         };
+
+        /**
+         * @brief Construct from an internal token data reference
+         *
+         * The @p token is expected to be a *reference* previously returned
+         * from @ref token() for a @ref JsonToken belonging to given @p json
+         * instance.
+         */
+        explicit JsonToken(const Json& json, const JsonTokenData& token) noexcept;
+
+        /**
+         * @brief Internal token data reference
+         *
+         * The @ref JsonTokenData reference is not useful for anything on its
+         * own, can only be passed back to @ref JsonToken(const Json&, const JsonTokenData&)
+         * to form a @ref JsonToken instance again. Note that it has to stay a
+         * reference, passing it by value will lose its relation to the
+         * @ref Json instance that owns it.
+         */
+        /* MinGW complains loudly if the declaration doesn't also have inline */
+        inline const JsonTokenData& token() const;
 
         /**
          * @brief Token data
@@ -1400,15 +1401,16 @@ class CORRADE_UTILITY_EXPORT JsonToken {
          *
          * Returned view points to data owned by the originating @ref Json
          * instance, or to the string passed to @ref Json::fromString() if it
-         * was called with @ref Containers::StringViewFlag::Global set. Due to
-         * implementation complexity reasons, the global flag is not preserved
-         * in the returned value here, only in case of @ref asString().
+         * was called with @ref Containers::StringViewFlag::Global set. The
+         * global flag is preserved in the returned value here, same as with
+         * @ref asString(). The @ref Containers::StringViewFlag::NullTerminated
+         * flag may also be present, in case the token data are exactly at the
+         * end of a null-terminated input string.
          */
         Containers::StringView data() const;
 
         /** @brief Token type */
-        /* MinGW complains loudly if the declaration doesn't also have inline */
-        inline Type type() const;
+        Type type() const;
 
         /**
          * @brief Common array type
@@ -1454,16 +1456,14 @@ class CORRADE_UTILITY_EXPORT JsonToken {
          * @relativeref{Json,parseLong()}, @relativeref{Json,parseSize()} or
          * @relativeref{Json,parseString()}.
          */
-        /* MinGW complains loudly if the declaration doesn't also have inline */
-        inline bool isParsed() const;
+        bool isParsed() const;
 
         /**
          * @brief Parsed token type
          *
          * @see @ref type(), @ref isParsed()
          */
-        /* MinGW complains loudly if the declaration doesn't also have inline */
-        inline ParsedType parsedType() const;
+        ParsedType parsedType() const;
 
         /**
          * @brief Common parsed array type
@@ -1490,14 +1490,6 @@ class CORRADE_UTILITY_EXPORT JsonToken {
          * that's an object key always returns @cpp 1 @ce. For an array with a
          * common type that isn't @ref Type::Object and @ref Type::Array
          * returns the array size.
-         *
-         * @m_class{m-note m-warning}
-         *
-         * @par
-         *      The behavior is undefined if the function is called on a
-         *      @ref JsonToken that has been copied out of the originating
-         *      @ref Json instance.
-         *
          * @see @ref commonArrayType()
          */
         std::size_t childCount() const;
@@ -1508,82 +1500,51 @@ class CORRADE_UTILITY_EXPORT JsonToken {
          * Contains all child tokens ordered in a depth-first manner as
          * described in @ref Utility-Json-tokenization. Returned view points
          * to data owned by the originating @ref Json instance.
-         *
-         * @m_class{m-note m-warning}
-         *
-         * @par
-         *      The behavior is undefined if the function is called on a
-         *      @ref JsonToken that has been copied out of the originating
-         *      @ref Json instance.
-         *
          * @see @ref childCount(), @ref parent()
          */
-        Containers::ArrayView<const JsonToken> children() const;
+        JsonView children() const;
 
         /**
          * @brief First child token
          *
-         * Returns first child token or @cpp nullptr @ce if there are no child
-         * tokens. In particular, for a non-empty @ref Type::Object the first
-         * immediate child is a @ref Type::String, which then contains the
-         * value as a child token tree. @ref Type::Null, @ref Type::Bool and
-         * @ref Type::Number tokens return @cpp nullptr @ce always. Accessing
-         * the first child has a @f$ \mathcal{O}(1) @f$ complexity. Returned
-         * value doints to data owned by the originating @ref Json instance.
-         *
-         * @m_class{m-note m-warning}
-         *
-         * @par
-         *      The behavior is undefined if the function is called on a
-         *      @ref JsonToken that has been copied out of the originating
-         *      @ref Json instance.
-         *
-         * @see @ref parent(), @ref next()
+         * Returns first child token or an invalid iterator if there are no
+         * child tokens. In particular, for a non-empty @ref Type::Object the
+         * first immediate child is a @ref Type::String, which then contains
+         * the value as a child token tree. @ref Type::Null, @ref Type::Bool
+         * and @ref Type::Number tokens return @cpp nullptr @ce always.
+         * Accessing the first child has a @f$ \mathcal{O}(1) @f$ complexity.
+         * Returned iterator points to data owned by the originating @ref Json
+         * instance.
+         * @see @ref JsonIterator::operator bool(), @ref parent(), @ref next()
          */
         /* MinGW complains loudly if the declaration doesn't also have inline */
-        inline const JsonToken* firstChild() const;
+        inline JsonIterator firstChild() const;
 
         /**
-         * @brief Next token or next
+         * @brief Next token
          *
-         * Return next token at the same or higher level, or a pointer to (one
-         * value after) the end. Accessing the next token has a
-         * @f$ \mathcal{O}(1) @f$ complexity. Returned value points to data
+         * Return next token at the same or higher level, or an iterator to
+         * (one value after) the end. Accessing the next token has a
+         * @f$ \mathcal{O}(1) @f$ complexity. Returned iterator points to data
          * owned by the originating @ref Json instance.
-         *
-         * @m_class{m-note m-warning}
-         *
-         * @par
-         *      The behavior is undefined if the function is called on a
-         *      @ref JsonToken that has been copied out of the originating
-         *      @ref Json instance.
-         *
          * @see @ref parent()
          */
-        const JsonToken* next() const {
-            return this + childCount() + 1;
-        }
+        /* MinGW complains loudly if the declaration doesn't also have inline */
+        inline JsonIterator next() const;
 
         /**
          * @brief Parent token
          *
-         * Returns parent token or @cpp nullptr @ce if the token is the root
+         * Returns parent token or an invalid iterator if the token is the root
          * token. Accessing the parent token is done by traversing the token
          * list backwards and thus has a @f$ \mathcal{O}(n) @f$ complexity ---
          * where possible, it's encouraged to remember the parent instead of
-         * using this function. Returned value points to data owned by the
+         * using this function. Returned iterator points to data owned by the
          * originating @ref Json instance.
-         *
-         * @m_class{m-note m-warning}
-         *
-         * @par
-         *      The behavior is undefined if the function is called on a
-         *      @ref JsonToken that has been copied out of the originating
-         *      @ref Json instance.
-         *
-         * @see @ref firstChild(), @ref next(), @ref Json::root()
+         * @see @ref JsonIterator::operator bool(), @ref firstChild(),
+         *      @ref next(), @ref Json::root()
          */
-        const JsonToken* parent() const;
+        JsonIterator parent() const;
 
         /**
          * @brief Get an iterable object
@@ -1593,14 +1554,6 @@ class CORRADE_UTILITY_EXPORT JsonToken {
          * token has @ref isParsed() set. See @ref Utility-Json-usage-iteration
          * for more information. Iteration through object keys is performed
          * using @ref next(), which has a @f$ \mathcal{O}(1) @f$ complexity.
-         *
-         * @m_class{m-note m-warning}
-         *
-         * @par
-         *      The behavior is undefined if the function is called on a
-         *      @ref JsonToken that has been copied out of the originating
-         *      @ref Json instance.
-         *
          * @see @ref type(), @ref Json::Option::ParseLiterals,
          *      @ref Json::Option::ParseStringKeys, @ref Json::parseLiterals(),
          *      @ref Json::parseStringKeys(), @ref Json::parseObject(),
@@ -1615,14 +1568,6 @@ class CORRADE_UTILITY_EXPORT JsonToken {
          * set. See @ref Utility-Json-usage-iteration for more information.
          * Iteration through array values is performed using @ref next(), which
          * has a @f$ \mathcal{O}(1) @f$ complexity.
-         *
-         * @m_class{m-note m-warning}
-         *
-         * @par
-         *      The behavior is undefined if the function is called on a
-         *      @ref JsonToken that has been copied out of the originating
-         *      @ref Json instance.
-         *
          * @see @ref type(), @ref commonArrayType(),
          *      @ref Json::Option::ParseLiterals, @ref Json::parseLiterals(),
          *      @ref Json::parseArray(), @ref asBitArray(),
@@ -1638,52 +1583,38 @@ class CORRADE_UTILITY_EXPORT JsonToken {
          *
          * Expects that the token is a @ref Type::Object, @ref isParsed() is
          * set and its keys have @ref isParsed() set as well. If @p key is
-         * found, returns the child token corresponding to its value, otherwise
-         * returns @cpp nullptr @ce.
+         * found, returns iterator to the child token corresponding to its
+         * value, otherwise returns an invalid iterator.
          *
          * Note that there's no acceleration structure built at parse time and
          * thus the operation has a @f$ \mathcal{O}(n) @f$ complexity, where
          * @f$ n @f$ is the number of keys in given object. When looking up
          * many keys in a larger object, it's thus recommended to iterate
          * through @ref asObject() than to repeatedly call this function.
-         *
-         * @m_class{m-note m-warning}
-         *
-         * @par
-         *      The behavior is undefined if the function is called on a
-         *      @ref JsonToken that has been copied out of the originating
-         *      @ref Json instance.
-         *
-         * @see @ref type(), @ref Json::Option::ParseLiterals,
+         * @see @ref JsonIterator::operator bool(), @ref type(),
+         *      @ref Json::Option::ParseLiterals,
          *      @ref Json::Option::ParseStringKeys, @ref Json::parseLiterals(),
          *      @ref Json::parseStringKeys(), @ref Json::parseObject()
          */
-        const JsonToken* find(Containers::StringView key) const;
+        JsonIterator find(Containers::StringView key) const;
 
         /**
          * @brief Find an array value by index
          *
          * Expects that the token is a @ref Type::Array and @ref isParsed() is
-         * set. If @p index is found, returns the corresponding token,
-         * otherwise returns @cpp nullptr @ce.
+         * set. If @p index is found, returns iterator to the corresponding
+         * token, otherwise returns an invalid iterator.
          *
          * Note that there's no acceleration structure built at parse time and
          * thus the operation has a @f$ \mathcal{O}(n) @f$ complexity, where
          * @f$ n @f$ is the number of items in given array. When looking up
          * many indices in a larger array, it's thus recommended to iterate
          * through @ref asArray() than to repeatedly call this function.
-         *
-         * @m_class{m-note m-warning}
-         *
-         * @par
-         *      The behavior is undefined if the function is called on a
-         *      @ref JsonToken that has been copied out of the originating
-         *      @ref Json instance.
-         *
-         * @see @ref type(), @ref Json::Option::ParseLiterals,
-         *      @ref Json::parseLiterals(), @ref Json::parseArray()
+         * @see @ref JsonIterator::operator bool(), @ref type(),
+         *      @ref Json::Option::ParseLiterals, @ref Json::parseLiterals(),
+         *      @ref Json::parseArray()
          */
-        const JsonToken* find(std::size_t index) const;
+        JsonIterator find(std::size_t index) const;
 
         /**
          * @brief Access an object value by key
@@ -1691,7 +1622,7 @@ class CORRADE_UTILITY_EXPORT JsonToken {
          * Compared to @ref find(Containers::StringView) const expects also
          * that @p key exists.
          */
-        const JsonToken& operator[](Containers::StringView key) const;
+        JsonToken operator[](Containers::StringView key) const;
 
         /**
          * @brief Access an array value by index
@@ -1699,7 +1630,7 @@ class CORRADE_UTILITY_EXPORT JsonToken {
          * Compared to @ref find(std::size_t) const expects also that @p index
          * exists.
          */
-        const JsonToken& operator[](std::size_t index) const;
+        JsonToken operator[](std::size_t index) const;
 
         /**
          * @brief Get a parsed null value
@@ -1823,13 +1754,6 @@ class CORRADE_UTILITY_EXPORT JsonToken {
          * @ref Json::parseBitArray() instead. The returned view points to data
          * owned by the originating @ref Json instance.
          *
-         * @m_class{m-note m-warning}
-         *
-         * @par
-         *      The behavior is undefined if the function is called on a
-         *      @ref JsonToken that has been copied out of the originating
-         *      @ref Json instance.
-         *
          * The @p expectedSize parameter is ignored on a @ref CORRADE_NO_ASSERT
          * build.
          * @see @ref type(), @ref commonArrayType(), @ref asBool(),
@@ -1854,13 +1778,6 @@ class CORRADE_UTILITY_EXPORT JsonToken {
          * @ref Json::parseDoubleArray() instead. The returned view points to
          * data owned by the originating @ref Json instance.
          *
-         * @m_class{m-note m-warning}
-         *
-         * @par
-         *      The behavior is undefined if the function is called on a
-         *      @ref JsonToken that has been copied out of the originating
-         *      @ref Json instance.
-         *
          * The @p expectedSize parameter is ignored on a @ref CORRADE_NO_ASSERT
          * build.
          * @see @ref type(), @ref commonArrayType(), @ref parsedType(),
@@ -1876,13 +1793,6 @@ class CORRADE_UTILITY_EXPORT JsonToken {
          * @cpp 0 @ce, already parsed as @ref ParsedType::Float. If not, use
          * @ref Json::parseFloatArray() instead. The returned view points to
          * data owned by the originating @ref Json instance.
-         *
-         * @m_class{m-note m-warning}
-         *
-         * @par
-         *      The behavior is undefined if the function is called on a
-         *      @ref JsonToken that has been copied out of the originating
-         *      @ref Json instance.
          *
          * The @p expectedSize parameter is ignored on a @ref CORRADE_NO_ASSERT
          * build.
@@ -1900,13 +1810,6 @@ class CORRADE_UTILITY_EXPORT JsonToken {
          * use @ref Json::parseUnsignedIntArray() instead. The returned view
          * points to data owned by the originating @ref Json instance.
          *
-         * @m_class{m-note m-warning}
-         *
-         * @par
-         *      The behavior is undefined if the function is called on a
-         *      @ref JsonToken that has been copied out of the originating
-         *      @ref Json instance.
-         *
          * The @p expectedSize parameter is ignored on a @ref CORRADE_NO_ASSERT
          * build.
          * @see @ref type(), @ref commonArrayType(), @ref parsedType(),
@@ -1922,13 +1825,6 @@ class CORRADE_UTILITY_EXPORT JsonToken {
          * @cpp 0 @ce, already parsed as @ref ParsedType::Int. If not, use
          * @ref Json::parseIntArray() instead. The returned view points to data
          * owned by the originating @ref Json instance.
-         *
-         * @m_class{m-note m-warning}
-         *
-         * @par
-         *      The behavior is undefined if the function is called on a
-         *      @ref JsonToken that has been copied out of the originating
-         *      @ref Json instance.
          *
          * The @p expectedSize parameter is ignored on a @ref CORRADE_NO_ASSERT
          * build.
@@ -1946,13 +1842,6 @@ class CORRADE_UTILITY_EXPORT JsonToken {
          * use @ref Json::parseUnsignedLongArray() instead. The returned view
          * points to data owned by the originating @ref Json instance.
          *
-         * @m_class{m-note m-warning}
-         *
-         * @par
-         *      The behavior is undefined if the function is called on a
-         *      @ref JsonToken that has been copied out of the originating
-         *      @ref Json instance.
-         *
          * The @p expectedSize parameter is ignored on a @ref CORRADE_NO_ASSERT
          * build.
          * @see @ref type(), @ref commonArrayType(), @ref parsedType(),
@@ -1969,13 +1858,6 @@ class CORRADE_UTILITY_EXPORT JsonToken {
          * @ref Json::parseLongArray() instead. The returned view points to
          * data owned by the originating @ref Json instance.
          *
-         * @m_class{m-note m-warning}
-         *
-         * @par
-         *      The behavior is undefined if the function is called on a
-         *      @ref JsonToken that has been copied out of the originating
-         *      @ref Json instance.
-         *
          * The @p expectedSize parameter is ignored on a @ref CORRADE_NO_ASSERT
          * build.
          * @see @ref type(), @ref commonArrayType(), @ref parsedType(),
@@ -1989,13 +1871,6 @@ class CORRADE_UTILITY_EXPORT JsonToken {
          * Convenience function that calls into @ref asUnsignedIntArray() on
          * @ref CORRADE_TARGET_32BIT "32-bit targets" and into
          * @ref asUnsignedLongArray() on 64-bit.
-         *
-         * @m_class{m-note m-warning}
-         *
-         * @par
-         *      The behavior is undefined if the function is called on a
-         *      @ref JsonToken that has been copied out of the originating
-         *      @ref Json instance.
          *
          * The @p expectedSize parameter is ignored on a @ref CORRADE_NO_ASSERT
          * build.
@@ -2016,13 +1891,6 @@ class CORRADE_UTILITY_EXPORT JsonToken {
          * @ref Containers::StringViewFlag::Global set. If not, the views point
          * to data owned by the originating @ref Json instance.
          *
-         * @m_class{m-note m-warning}
-         *
-         * @par
-         *      The behavior is undefined if the function is called on a
-         *      @ref JsonToken that has been copied out of the originating
-         *      @ref Json instance.
-         *
          * The @p expectedSize parameter is ignored on a @ref CORRADE_NO_ASSERT
          * build.
          * @see @ref type(), @ref commonArrayType(), @ref asString(),
@@ -2032,116 +1900,241 @@ class CORRADE_UTILITY_EXPORT JsonToken {
 
     private:
         friend Json;
+        friend JsonView;
+        friend JsonObjectView;
+        friend JsonArrayView;
+        friend JsonTokenData; /* uses the constants */
+        friend JsonIterator;
+        friend JsonObjectIterator;
+        friend JsonArrayIterator;
+
+        explicit JsonToken(const Implementation::JsonData& json, std::size_t token) noexcept: _json{&json}, _token{token} {}
 
         /* Used by asString() as well as find(Containers::StringView), doesn't
            assert token type and whether it's parsed */
         CORRADE_UTILITY_LOCAL Containers::StringView asStringInternal() const;
 
         enum: std::uint64_t {
-            #ifndef CORRADE_TARGET_32BIT
-            /* Matching public Type, stored in last 3 bits of
-               _sizeFlagsParsedTypeType */
-            TypeMask = 0x07ull << 61, /* 0b111 */
-            TypeObject = 1ull << 61,
-            TypeArray = 2ull << 61,
-            TypeNull = 3ull << 61,
-            TypeBool = 4ull << 61,
-            TypeNumber = 5ull << 61,
-            TypeString = 6ull << 61,
+            /* If the token has these bits set, type is stored in TypeSmall*
+               / TypeLarge* bits, otherwise the type is in the token size and
+               stored in TypeTokenSize* bits */
+            NanMask = 0xfffull << 52, /* sign bit + NaN, 0b111111111111 */
+            Nan = 0x7ffull << 52, /* +NaN, 0b011111111111 */
 
-            /* Matching public ParsedType, stored before the type in
-               _sizeFlagsParsedTypeType */
-            ParsedTypeMask = 0x07ull << 58, /* 0b111 */
-            ParsedTypeNone = 0ull << 58,
-            ParsedTypeDouble = 1ull << 58,
-            ParsedTypeFloat = 2ull << 58,
-            ParsedTypeUnsignedInt = 3ull << 58,
-            ParsedTypeInt = 4ull << 58,
-            ParsedTypeUnsignedLong = 5ull << 58,
-            ParsedTypeLong = 6ull << 58,
-            ParsedTypeOther = 7ull << 58,
+            /* This bit is set for parsed small or large types. 64-bit types,
+               which are if TypeTokenSizeMask is non-zero, are all parsed. */
+            TypeSmallLargeIsParsed = 0x1ull << 48,          /* 0b0001____ */
 
-            /* Stored before the parsed type in _sizeFlagsParsedTypeType */
-            FlagStringKey = 1ull << 57,
-            FlagStringGlobal = 1ull << 56,
-            FlagStringEscaped = 1ull << 55,
+            TypeSmallMask = NanMask|(0xfcull << 44), /* sign, NaN, 6 bits after */
+            /* All TypeSmall* use just 32 bits for data out of the remaining 46
+               bits. The remaining 14 bits are currently unused. */
+            TypeSmallDataMask = 0xffffffffull, /* the final 32 bits */
+            /* All TypeSmall* have the first two bits out of five zero */
+            /* This bit is set for number types */
+            TypeSmallIsNumber = 0x20ull << 44,              /* 0b001000__ */
+            TypeSmallNull = Nan|(0x00ull << 44),            /* 0b000?00__ */
+            TypeSmallBool = Nan|(0x04ull << 44),            /* 0b000?01__ */
+            TypeSmallNumber = Nan|(0x20ull << 44),          /* 0b001000__ */
+            /* These have both the IsNumber and IsParsed bit implicitly set */
+            TypeSmallFloat = Nan|(0x34ull << 44),           /* 0b001101__ */
+            TypeSmallUnsignedInt = Nan|(0x38ull << 44),     /* 0b001110__ */
+            TypeSmallInt = Nan|(0x3cull << 44),             /* 0b001111__ */
 
-            /* Size is the remaining 55 bits of _sizeFlagsParsedTypeType */
-            SizeMask = (1ull << 55) - 1,
-            #else
-            SignMask = 0x800ull << 52, /* 0b100000000000 */
-            NanMask = 0x7ffull << 52,  /* 0b011111111111 */
-            ChildCountMask = 0xffffffffull,
-
-            /* Matching public Type, stored in _childCountFlagsTypeNan before
-               NaN if NaN is set; if NaN is not set it's implicitly TypeNumber */
-            TypeMask = 0x07ull << 49, /* 0b111 */
-            TypeObject = 1ull << 49,
-            TypeArray = 2ull << 49,
-            TypeNull = 3ull << 49,
-            TypeBool = 4ull << 49,
-            TypeNumber = 5ull << 49,
-            TypeString = 6ull << 49,
-
-            /* Stored in _childCountFlagsTypeNan before the type if NaN is set;
-               if NaN is not set the Parsed* values below are used instead */
-            FlagParsed = 1ull << 48,
-            FlagStringKey = 1ull << 47,
-            FlagStringGlobal = 1ull << 46,
-            FlagStringEscaped = 1ull << 45
-            #endif
+            TypeLargeMask = NanMask|(0xfull << 48), /* sign, NaN, 4 bits after */
+            TypeLargeDataMask = 0xffffffffffffull, /* the final 48 bits */
+            /* All TypeSmall* have the first two bits out of five non-zero */
+            TypeIsLarge = 0xcull << 48,                     /* 0b1100 */
+            /* This bit is set for string types */
+            TypeLargeIsString = 0x8ull << 48,               /* 0b1000 */
+            /* This bit is set for string types that are a key */
+            TypeLargeStringIsKey = 0x4ull << 48,            /* 0b0100 */
+            /* This bit is set for string types that are escaped */
+            TypeLargeStringIsEscaped = 0x2ull << 48,        /* 0b0010 */
+            TypeLargeObject = Nan|(0x4ull << 48),           /* 0b010? */
+            TypeLargeArray = Nan|(0x6ull << 48),            /* 0b011? */
+            TypeLargeString = Nan|(0x8ull << 48),           /* 0b100? */
+            TypeLargeStringEscaped = Nan|(0xaull << 48),    /* 0b101? */
+            TypeLargeStringKey = Nan|(0xcull << 48),        /* 0b110? */
+            TypeLargeStringKeyEscaped = Nan|(0xeull << 48), /* 0b111? */
         };
 
-        #ifdef CORRADE_TARGET_32BIT
-        enum: std::uint32_t {
-            /* Matching public ParsedType, stored in the last bits of
-               _sizeParsedType if NaN is not set; if NaN is set the Flag*
-               values above are used instead */
-            ParsedTypeMask = 0x07u << 29, /* 0b111 */
-            /* ParsedTypeNone does not apply here */
-            ParsedTypeDouble = 1u << 29,
-            ParsedTypeFloat = 2u << 29,
-            ParsedTypeUnsignedInt = 3u << 29,
-            ParsedTypeInt = 4u << 29,
-            ParsedTypeUnsignedLong = 5u << 29,
-            ParsedTypeLong = 6u << 29,
-            /* ParsedTypeOther does not apply here */
-
-            /* If NaN is not set, size is the remaining 28 bits of
-               _sizeParsedType */
-            SizeMask = (1u << 28) - 1
+        /* The final 2 bits of a 32/64-bit token offset are used to distinguish
+           between 64-bit types. If both bits are 0, the token should have
+           NanMask set and the type described by the 4 or 5 bits after it. */
+        enum: std::size_t {
+            TypeTokenSizeMask = 0x3ull << (sizeof(std::size_t)*8 - 2),
+            TypeTokenSizeOther = 0x0ull << (sizeof(std::size_t)*8 - 2),
+            TypeTokenSizeDouble = 0x1ull << (sizeof(std::size_t)*8 - 2),
+            TypeTokenSizeUnsignedLong = 0x2ull << (sizeof(std::size_t)*8 - 2),
+            TypeTokenSizeLong = 0x3ull << (sizeof(std::size_t)*8 - 2),
         };
-        #endif
 
-        explicit JsonToken(NoInitT) /*nothing*/ {};
-        constexpr explicit JsonToken(ValueInitT): _data{},
-            #ifndef CORRADE_TARGET_32BIT
-            _sizeFlagsParsedTypeType{},
-            #else
-            _sizeParsedType{},
-            #endif
-            #ifndef CORRADE_TARGET_32BIT
-            _childCount{}
-            #else
-            _childCountFlagsTypeNan{}
-            #endif
-            {}
+        /* Is never null, just avoiding a Containers::Reference dependency */
+        const Implementation::JsonData* _json;
+        std::size_t _token;
+};
 
-        /* See Json.cpp for detailed layout description and differences between
-           32- and 64-bit representation */
-        const char* _data;
-        #ifndef CORRADE_TARGET_32BIT
-        std::size_t _sizeFlagsParsedTypeType;
+/** @debugoperatorclassenum{JsonToken,Type} */
+CORRADE_UTILITY_EXPORT Debug& operator<<(Debug& debug, JsonToken::Type value);
+
+/** @debugoperatorclassenum{JsonToken,ParsedType} */
+CORRADE_UTILITY_EXPORT Debug& operator<<(Debug& debug, JsonToken::ParsedType value);
+
+/**
+@brief Data of a single JSON token
+@m_since_latest
+
+Storage for the actual JSON token data inside a @ref Json, internally
+referenced from @ref JsonToken instances and accessible through
+@ref JsonToken::token(). Is not usable on its own, pass it to
+@ref JsonToken::JsonToken(const Json&, const JsonTokenData&) to access the data
+it references.
+
+Together with @ref JsonTokenOffsetSize can be also used to create a @ref Json
+instance directly from individual tokens, such as when it's desirable to make
+externally parsed data available through a JSON-compatible interface. See
+@ref Utility-Json-from-tokens for more information and a detailed usage
+example.
+
+@experimental
+*/
+class CORRADE_UTILITY_EXPORT JsonTokenData {
+    public:
+        /**
+         * @brief Construct a parsed object, array or string token
+         * @param type  Token type. Expected to be @ref JsonToken::Type::Object,
+         *      @ref JsonToken::Type::Array or @ref JsonToken::Type::String.
+         * @param childCountOrStringIndex Child token count for an object or
+         *      array or escaped string index for a string. Set to
+         *      @cpp ~std::uint64_t{} @ce for a non-escaped string that's
+         *      referenced directly from the input data.
+         * @param stringIsKey Set to @cpp true @ce if it's a string token
+         *      that's an object key. Expected to be @cpp false @ce otherwise.
+         */
+        explicit JsonTokenData(JsonToken::Type type, std::uint64_t childCountOrStringIndex, bool stringIsKey = false);
+
+        /**
+         * @brief Construct a parsed null token
+         *
+         * Results in a @ref JsonToken::Type::Null token.
+         */
+        explicit JsonTokenData(std::nullptr_t);
+
+        /**
+         * @brief Construct a parsed bool token
+         *
+         * Results in a @ref JsonToken::Type::Bool token.
+         */
+        explicit JsonTokenData(bool value);
+
+        /**
+         * @brief Construct a parsed 64-bit floating-point token
+         * @param value         The numeric value
+         * @param offsetSize    Matching token offset and size instance where
+         *      to store the token type.
+         *
+         * Results in a @ref JsonToken::Type::Number token with
+         * @ref JsonToken::ParsedType::Double. The value is expected to not be
+         * a NaN or an infinity, as the internal representation relies on JSON
+         * format restrictions for efficient data packing.
+         */
+        explicit JsonTokenData(double value, JsonTokenOffsetSize& offsetSize);
+
+        /**
+         * @brief Construct a parsed 32-bit floating-point token
+         *
+         * Results in a @ref JsonToken::Type::Number token with
+         * @ref JsonToken::ParsedType::Float. The value is expected to not be a
+         * NaN or an infinity, as the internal representation relies on JSON
+         * format restrictions for efficient data packing.
+         */
+        explicit JsonTokenData(float value);
+
+        /**
+         * @brief Construct a parsed unsigned 32-bit integer token
+         *
+         * Results in a @ref JsonToken::Type::Number token with
+         * @ref JsonToken::ParsedType::UnsignedInt.
+         */
+        explicit JsonTokenData(std::uint32_t value);
+
+        /**
+         * @brief Construct a parsed signed 32-bit integer token
+         *
+         * Results in a @ref JsonToken::Type::Number token with
+         * @ref JsonToken::ParsedType::Int.
+         */
+        explicit JsonTokenData(std::int32_t value);
+
+        #ifdef DOXYGEN_GENERATING_OUTPUT
+        /**
+         * @brief Construct a parsed unsigned 52-bit integer token
+         * @param value         The numeric value
+         * @param offsetSize    Matching token offset and size instance where
+         *      to store the token type.
+         *
+         * Results in a @ref JsonToken::Type::Number token with
+         * @ref JsonToken::ParsedType::UnsignedLong. The value is expected to
+         * fit into 52 bits, as the internal representation relies on JSON
+         * format restrictions for efficient data packing.
+         */
+        explicit JsonTokenData(std::uint64_t value, JsonTokenOffsetSize& offsetSize);
         #else
-        std::size_t _sizeParsedType;
+        explicit JsonTokenData(unsigned long long value, JsonTokenOffsetSize& offsetSize);
+        /* Hey, C and C++, your types *and* your typedefs are stupid! Similar
+           shit has to be done in JsonWriter::write() as well. */
+        template<class U = unsigned long, class = typename std::enable_if<sizeof(U) == 4>::type> explicit JsonTokenData(unsigned long value):
+            JsonTokenData{static_cast<unsigned int>(value)} {}
+        template<class U = unsigned long, class = typename std::enable_if<sizeof(U) == 8>::type> explicit JsonTokenData(unsigned long value, JsonTokenOffsetSize& offsetSize):
+            JsonTokenData{static_cast<unsigned long long>(value), offsetSize} {}
         #endif
+
+        #ifdef DOXYGEN_GENERATING_OUTPUT
+        /**
+         * @brief Construct a parsed signed 52-bit integer token
+         * @param value         The numeric value
+         * @param offsetSize    Matching token offset and size instance where
+         *      to store the token type.
+         *
+         * Results in a @ref JsonToken::Type::Number token with
+         * @ref JsonToken::ParsedType::Long. The value
+         * is expected to fit into 52 bits, excluding the sign, as the internal
+         * representation relies on JSON format restrictions for efficient data
+         * packing.
+         */
+        explicit JsonTokenData(std::int64_t value, JsonTokenOffsetSize& offsetSize);
+        #else
+        explicit JsonTokenData(long long value, JsonTokenOffsetSize& offsetSize);
+        /* Hey, C and C++, your types *and* your typedefs are stupid! Similar
+           shit has to be done in JsonWriter::write() as well. */
+        template<class U = long, class = typename std::enable_if<sizeof(U) == 4>::type> explicit JsonTokenData(long value):
+            JsonTokenData{static_cast<int>(value)} {}
+        template<class U = long, class = typename std::enable_if<sizeof(U) == 8>::type> explicit JsonTokenData(long value, JsonTokenOffsetSize& offsetSize):
+            JsonTokenData{static_cast<long long>(value), offsetSize} {}
+        #endif
+
+    private:
+        friend Json;
+        friend JsonToken;
+        friend JsonObjectIterator; /* uses childCount() */
+        friend JsonArrayIterator; /* uses childCount() */
+
+        /* This constructor is currently private because user code should have
+           no need to create instances of this class directly */
+        explicit JsonTokenData(NoInitT) /*nothing*/ {}
+
+        /* These are all private because they may depend on spatial locality
+           relative to other tokens, which has to be ensured externally */
+        std::size_t childCount() const;
+        inline bool isNumber() const;
+
+        /* See Json.cpp for detailed layout description */
         union {
-            /* Child count abused for parent token index during parsing */
-            #ifndef CORRADE_TARGET_32BIT
-            std::uint64_t _childCount;
-            #else
-            std::uint64_t _childCountFlagsTypeNan;
-            #endif
+            /* The upper 12 bits contain a NaN, the next four / five bits
+               contain a type. For objects and arrays, the lower 48 bits is
+               abused for storing parent token index. After tokenization, they
+               contain child count. */
+            std::uint64_t _dataTypeNan;
             /* Wouldn't the shorter types clash with NaN on BE? */
             bool _parsedBool;
             double _parsedDouble;
@@ -2150,15 +2143,48 @@ class CORRADE_UTILITY_EXPORT JsonToken {
             std::int64_t _parsedLong;
             std::uint32_t _parsedUnsignedInt;
             std::int32_t _parsedInt;
-            Containers::String* _parsedString;
         };
 };
 
-/** @debugoperatorclassenum{JsonToken,Type} */
-CORRADE_UTILITY_EXPORT Debug& operator<<(Debug& debug, JsonToken::Type value);
+/**
+@brief JSON token offset and size
+@m_since_latest
 
-/** @debugoperatorclassenum{JsonToken,ParsedType} */
-CORRADE_UTILITY_EXPORT Debug& operator<<(Debug& debug, JsonToken::ParsedType value);
+Together with @ref JsonTokenData used as an input when creating a @ref Json
+instance directly from individual tokens, such as when it's desirable to make
+externally parsed data available through a JSON-compatible interface. See
+@ref Utility-Json-from-tokens for more information and a detailed usage
+example.
+
+@experimental
+*/
+class JsonTokenOffsetSize {
+    public:
+        /**
+         * @brief Constructor
+         * @param offset        Token offset from the start of the string
+         * @param size          Token size
+         */
+        /*implicit*/ JsonTokenOffsetSize(std::size_t offset, std::size_t size): _offset{offset}, _sizeType{size} {}
+
+        /**
+         * @brief Construct an empty token
+         *
+         * An empty token only contains the parsed value and cannot be reparsed
+         * to a different numeric type, for example. Meant to be used in cases
+         * where the token data represent something other than a JSON, such as
+         * CBOR or various other JSON-compatible binary representations.
+         */
+        /*implicit*/ JsonTokenOffsetSize(): _offset{}, _sizeType{} {}
+
+    private:
+        friend Json;
+        friend JsonToken;
+        friend JsonTokenData;
+
+        std::size_t _offset;
+        std::size_t _sizeType;
+};
 
 /**
 @brief JSON object item
@@ -2172,13 +2198,6 @@ Returned when iterating @ref JsonToken::asObject(). See
 class CORRADE_UTILITY_EXPORT JsonObjectItem {
     public:
         /**
-         * @brief Key type
-         *
-         * Used by @ref JsonView::find() and @ref JsonView::operator[]().
-         */
-        typedef Containers::StringView KeyType;
-
-        /**
          * @brief Key
          *
          * Equivalent to calling @ref JsonToken::asString() on the token.
@@ -2190,9 +2209,8 @@ class CORRADE_UTILITY_EXPORT JsonObjectItem {
          *
          * Equvialent to accessing @ref JsonToken::firstChild() on the token.
          */
-        const JsonToken& value() const {
-            return *_token->firstChild();
-        }
+        /* MinGW complains loudly if the declaration doesn't also have inline */
+        inline JsonToken value() const;
 
         /**
          * @brief Key token
@@ -2200,17 +2218,14 @@ class CORRADE_UTILITY_EXPORT JsonObjectItem {
          * Key is retrivable as @ref JsonToken::asString() on the returned
          * token, value as @ref JsonToken::firstChild().
          */
-        /*implicit*/ operator const JsonToken&() const {
-            return *_token;
-        }
+        /*implicit*/ operator JsonToken() const { return _token; }
 
     private:
-        friend JsonIterator<JsonObjectItem>;
+        friend JsonObjectIterator;
 
-        /* The index is used only in JsonArrayItem, not here */
-        explicit JsonObjectItem(std::size_t, const JsonToken& token) noexcept: _token{&token} {}
+        explicit JsonObjectItem(JsonToken token) noexcept: _token{token} {}
 
-        const JsonToken* _token;
+        JsonToken _token;
 };
 
 /**
@@ -2224,53 +2239,253 @@ Returned when iterating @ref JsonToken::asObject(). See
 */
 class JsonArrayItem {
     public:
-        /**
-         * @brief Key type
-         *
-         * Used by @ref JsonView::find() and @ref JsonView::operator[]().
-         */
-        typedef std::size_t KeyType;
-
         /** @brief Array index */
         std::size_t index() const { return _index; }
 
         /** @brief Value */
-        const JsonToken& value() const { return *_token; }
+        JsonToken value() const { return _token; }
 
         /** @brief Value */
-        operator const JsonToken&() const {
-            return *_token;
-        }
+        /*implicit*/ operator JsonToken() const { return _token; }
 
     private:
-        friend JsonIterator<JsonArrayItem>;
+        friend JsonArrayIterator;
 
-        explicit JsonArrayItem(std::size_t index, const JsonToken& token) noexcept: _index{index}, _token{&token} {}
+        explicit JsonArrayItem(std::size_t index, JsonToken token) noexcept: _index{index}, _token{token} {}
 
         std::size_t _index;
-        const JsonToken* _token;
+        JsonToken _token;
 };
+
+namespace Implementation {
+
+/* Is inherited by Json::State with more members, this contains just enough to
+   be able to inline hot paths but not pull in Array etc. headers */
+struct JsonData {
+    const JsonTokenData* tokens;
+    const JsonTokenOffsetSize* tokenOffsetsSizes;
+    std::size_t tokenCount;
+
+    /* Disallow accidental deletion through the base pointer */
+    protected:
+        ~JsonData() = default;
+};
+
+}
 
 /**
 @brief JSON iterator
 @m_since_latest
 
-Iterator for @ref JsonView, which is returned from @ref JsonToken::asObject()
+Iterator for @ref JsonView, which is returned from @ref Json::tokens() and
+@ref JsonToken::children(), and additionally directly returned from
+@ref JsonToken::firstChild(), @ref JsonToken::parent(), @ref JsonToken::find(),
+@ref JsonObjectView::find() and @ref JsonArrayView::find(), where it indicates
+a potentially invalid value.
+
+Compared to @ref JsonObjectIterator and @ref JsonArrayIterator iterates all
+tokens in a depth-first manner instead of just the immediate children, and can
+go both ways, not just forward. See @ref Utility-Json-tokenization for more
+information about the internal representation.
+@experimental
+*/
+class JsonIterator {
+    public:
+        /**
+         * @brief Default constructor
+         *
+         * Creates an invalid iterator, i.e. one with @ref operator bool()
+         * returning @cpp false @ce.
+         */
+        /*implicit*/ JsonIterator(): _json{}, _token{} {}
+
+        /** @brief Construct from a token */
+        /*implicit*/ JsonIterator(JsonToken token) noexcept: _json{token._json}, _token{token._token} {}
+
+        /** @brief Equality comparison */
+        bool operator==(const JsonIterator& other) const {
+            return _token == other._token;
+        }
+
+        /** @brief Non-equality comparison */
+        bool operator!=(const JsonIterator& other) const {
+            return _token != other._token;
+        }
+
+        /**
+         * @brief Whether the iterator is valid
+         *
+         * Returns @cpp false @ce if the iterator is default-constructed,
+         * returned from @ref JsonToken::firstChild() of a token that has no
+         * children, from @ref JsonToken::parent() of a token that has no
+         * parent, from @ref JsonToken::find(), @ref JsonObjectView::find()
+         * or @ref JsonArrayView::find() if given key or index wasn't found, or
+         * if it was advanced outside of the bounds of the token stream,
+         * @cpp true @ce otherwise.
+         */
+        explicit operator bool() const {
+            return _json && _token < _json->tokenCount;
+        }
+
+        /**
+         * @brief Advance to previous position
+         *
+         * The iterator is expected to be valid and not at the begin of the
+         * token stream. Note that compared to @ref JsonObjectIterator and
+         * @ref JsonArrayIterator it advances in a depth-first manner instead
+         * of just the immediate children.
+         * @see @ref operator bool()
+         */
+        JsonIterator& operator--() {
+            CORRADE_DEBUG_ASSERT(_json, "Utility::JsonIterator::operator--(): the iterator is invalid", *this);
+            CORRADE_DEBUG_ASSERT(_token > 0,
+                "Utility::JsonIterator::operator--(): advancing past the begin of the token stream", *this);
+            --_token;
+            return *this;
+        }
+
+        /**
+         * @brief Advance to next position
+         *
+         * The iterator is expected to be valid. Note that compared to
+         * @ref JsonObjectIterator and @ref JsonArrayIterator it advances in a
+         * depth-first manner instead of just the immediate children.
+         * @see @ref operator bool()
+         */
+        JsonIterator& operator++() {
+            CORRADE_DEBUG_ASSERT(_json, "Utility::JsonIterator::operator++(): the iterator is invalid", *this);
+            CORRADE_DEBUG_ASSERT(_token < _json->tokenCount,
+                "Utility::JsonIterator::operator++(): advancing past the end of the token stream", *this);
+            ++_token;
+            return *this;
+        }
+
+        /**
+         * @brief Dereference
+         *
+         * The iterator is expected to be valid.
+         * @see @ref operator bool()
+         */
+        JsonToken operator*() const {
+            CORRADE_DEBUG_ASSERT(_json && _token < _json->tokenCount,
+                "Utility::JsonIterator::operator*(): the iterator is invalid", (JsonToken{*_json, _token}));
+            return JsonToken{*_json, _token};
+        }
+
+        /**
+         * @brief Dereference
+         *
+         * The iterator is expected to be valid.
+         * @see @ref operator bool()
+         */
+        const JsonToken* operator->() const {
+            CORRADE_DEBUG_ASSERT(_json && _token < _json->tokenCount,
+                "Utility::JsonIterator::operator->(): the iterator is invalid", reinterpret_cast<const JsonToken*>(this));
+            return reinterpret_cast<const JsonToken*>(this);
+        }
+
+    private:
+        friend JsonToken;
+        friend JsonView;
+
+        explicit JsonIterator(const Implementation::JsonData* json, std::size_t token) noexcept: _json{json}, _token{token} {
+            /* Has to be here because in the class definition the type would
+               still be incomplete. Cannot be free-standing in Json.cpp because
+               the members are private. */
+            static_assert(
+                offsetof(JsonToken, _json) == offsetof(JsonIterator, _json) &&
+                offsetof(JsonToken, _token) == offsetof(JsonIterator, _token),
+                "incompatible JsonToken and JsonIterator class layout");
+        }
+
+        /* Compared to other cases, here it can be null. The members need to
+           have the same layout as JsonToken for the operator->() to work, see
+           the static_assert() above. */
+        const Implementation::JsonData* _json;
+        std::size_t _token;
+};
+
+/**
+@brief JSON object iterator
+@m_since_latest
+
+Iterator for @ref JsonObjectView, which is returned from
+@ref Json::parseObject() and @ref JsonToken::asObject(). See
+@ref Utility-Json-usage-iteration for more information.
+
+@experimental
+*/
+class JsonObjectIterator {
+    public:
+        /** @brief Equality comparison */
+        bool operator==(const JsonObjectIterator& other) const {
+            return _token == other._token;
+        }
+
+        /** @brief Non-equality comparison */
+        bool operator!=(const JsonObjectIterator& other) const {
+            return _token != other._token;
+        }
+
+        /**
+         * @brief Advance to next position
+         *
+         * Expects that the iterator is not at the end of the token stream.
+         * It's however not possible to detect advancing outside of the
+         * iterated object, such iterators have undefined behavior.
+         * Implemented using @ref JsonToken::next().
+         */
+        JsonObjectIterator& operator++() {
+            CORRADE_DEBUG_ASSERT(_token < _json->tokenCount,
+                "Utility::JsonObjectIterator::operator++(): advancing past the end of the token stream", *this);
+            _token += _json->tokens[_token].childCount() + 1;
+            return *this;
+        }
+
+        /**
+         * @brief Dereference
+         *
+         * Expects that the iterator is not at the end of the token stream.
+         * It's however not possible to detect advancing outside of the
+         * iterated object, dereferencing such iterators has undefined
+         * behavior.
+         */
+        JsonObjectItem operator*() const {
+            CORRADE_DEBUG_ASSERT(_token < _json->tokenCount,
+                "Utility::JsonObjectIterator::operator*(): dereferencing iterator at the end of the token stream", (JsonObjectItem{JsonToken{*_json, _token}}));
+            return JsonObjectItem{JsonToken{*_json, _token}};
+        }
+
+    private:
+        friend JsonObjectView;
+
+        explicit JsonObjectIterator(const Implementation::JsonData& json, std::size_t token) noexcept: _json{&json}, _token{token} {}
+
+        /* Is never null, just avoiding a Containers::Reference dependency */
+        const Implementation::JsonData* _json;
+        std::size_t _token;
+};
+
+/**
+@brief JSON array iterator
+@m_since_latest
+
+Iterator for @ref JsonArrayView, which is returned from @ref Json::parseArray()
 and @ref JsonToken::asArray(). See @ref Utility-Json-usage-iteration for more
 information.
 
 @experimental
 */
-template<class T> class JsonIterator {
+class JsonArrayIterator {
     public:
         /** @brief Equality comparison */
-        bool operator==(const JsonIterator<T>& other) const {
+        bool operator==(const JsonArrayIterator& other) const {
             /* _index is implicit, no need to compare */
             return _token == other._token;
         }
 
         /** @brief Non-equality comparison */
-        bool operator!=(const JsonIterator<T>& other) const {
+        bool operator!=(const JsonArrayIterator& other) const {
             /* _index is implicit, no need to compare */
             return _token != other._token;
         }
@@ -2278,81 +2493,139 @@ template<class T> class JsonIterator {
         /**
          * @brief Advance to next position
          *
-         * Implemented using @ref JsonToken::next().
+         * Expects that the iterator is not at the end of the token stream.
+         * It's however not possible to detect advancing outside of the
+         * iterated array, such iterators have undefined behavior. Implemented
+         * using @ref JsonToken::next().
          */
-        JsonIterator<T>& operator++() {
+        JsonArrayIterator& operator++() {
+            CORRADE_DEBUG_ASSERT(_token < _json->tokenCount,
+                "Utility::JsonArrayIterator::operator++(): advancing past the end of the token stream", *this);
             ++_index;
-            _token = _token->next();
+            _token += _json->tokens[_token].childCount() + 1;
             return *this;
         }
 
-        /** @brief Dereference */
-        T operator*() const {
-            return T{_index, *_token};
+        /**
+         * @brief Dereference
+         *
+         * Expects that the iterator is not at the end of the token stream.
+         * It's however not possible to detect advancing outside of the
+         * iterated array, dereferencing such iterators has undefined behavior.
+         */
+        JsonArrayItem operator*() const {
+            CORRADE_DEBUG_ASSERT(_token < _json->tokenCount,
+                "Utility::JsonArrayIterator::operator*(): dereferencing iterator at the end of the token stream", (JsonArrayItem{_index, JsonToken{*_json, _token}}));
+            return JsonArrayItem{_index, JsonToken{*_json, _token}};
         }
 
     private:
-        friend JsonView<T>;
+        friend JsonArrayView;
 
-        explicit JsonIterator(std::size_t index, const JsonToken* token) noexcept: _index{index}, _token{token} {}
+        explicit JsonArrayIterator(const Implementation::JsonData& json, std::size_t index, std::size_t token) noexcept: _json{&json}, _index{index}, _token{token} {}
 
+        /* Is never null, just avoiding a Containers::Reference dependency */
+        const Implementation::JsonData* _json;
         std::size_t _index;
-        const JsonToken* _token;
+        std::size_t _token;
 };
 
 /**
-@brief JSON object and array view
+@brief JSON token subtree
 @m_since_latest
 
-Returned from @ref Json::parseObject(), @ref Json::parseArray(),
-@ref JsonToken::asObject() and @ref JsonToken::asArray(). See
-@ref Utility-Json-usage-iteration for more information.
+Returned from @ref Json::tokens() and @ref JsonToken::children(). Note that,
+unlike with @ref JsonObjectView and @ref JsonArrayView, the iteration is
+performed on the whole subtree in a depth-first order, it doesn't iterate just
+the immediate children.
 
 @experimental
-
-@see @ref JsonObjectView, @ref JsonArrayView
 */
-template<class T> class JsonView {
+class JsonView {
     public:
-        /** @brief Iterator to the first element */
-        JsonIterator<T> begin() const { return JsonIterator<T>{0, _begin}; }
-        /** @overload */
-        JsonIterator<T> cbegin() const { return JsonIterator<T>{0, _begin}; }
-
-        /** @brief Iterator to (one item after) the last element */
-        JsonIterator<T> end() const { return JsonIterator<T>{0, _end}; }
-        /** @overload */
-        JsonIterator<T> cend() const { return JsonIterator<T>{0, _end}; }
+        /**
+         * @brief Token count
+         *
+         * Note that the returned value includes all nested children as well,
+         * it isn't just the count of immediate children.
+         * @see @ref size()
+         */
+        std::size_t size() { return _end - _begin; }
 
         /**
-         * @brief Find an object value by key or an array value by index
+         * @brief Whether the view is empty
          *
-         * Calls @ref JsonToken::find(Containers::StringView) const or
-         * @ref JsonToken::find(std::size_t) const on the enclosing object or
-         * array token. Useful for performing a lookup directly on the value
-         * returned from @ref Json::parseObject() or @ref Json::parseArray().
+         * @see @ref size()
          */
-        const JsonToken* find(typename T::KeyType key) const;
+        bool isEmpty() const { return _end == _begin; }
 
         /**
-         * @brief Access an object value by key or an array value by index
+         * @brief Iterator to the first element
          *
-         * Calls @ref JsonToken::operator[](Containers::StringView) const or
-         * @ref JsonToken::operator[](std::size_t) const on the enclosing
-         * object or array token. Useful for performing a lookup directly on
-         * the value returned from @ref Json::parseObject() or
-         * @ref Json::parseArray().
+         * If the view is empty, the iterator reports itself as valid but may
+         * point outside of the actual token data.
+         * @see @ref isEmpty(), @ref JsonIterator::operator bool(),
+         *      @ref front()
          */
-        const JsonToken& operator[](typename T::KeyType key) const;
+        JsonIterator begin() const { return JsonIterator{_json, _begin}; }
+        /** @overload */
+        JsonIterator cbegin() const { return JsonIterator{_json, _begin}; }
+
+        /**
+         * @brief Iterator to (one item after) the last element
+         *
+         * The returned iterator reports itself as valid but may point outside
+         * of the actual token data.
+         * @see @ref JsonIterator::operator bool(), @ref back()
+         */
+        JsonIterator end() const { return JsonIterator{_json, _end}; }
+        /** @overload */
+        JsonIterator cend() const { return JsonIterator{_json, _end}; }
+
+        /**
+         * @brief First token
+         *
+         * Expects there is at least one token.
+         * @see @ref isEmpty(), @ref begin(), @ref operator[]()
+         */
+        JsonToken front() const {
+            CORRADE_DEBUG_ASSERT(_begin != _end,
+                "Utility::JsonView::front(): view is empty", (JsonToken{*_json, _begin}));
+            return JsonToken{*_json, _begin};
+        }
+
+        /**
+         * @brief Last token
+         *
+         * Expects there is at least one token.
+         * @see @ref isEmpty(), @ref end(), @ref operator[]()
+         */
+        JsonToken back() const {
+            CORRADE_DEBUG_ASSERT(_begin != _end,
+                "Utility::JsonView::back(): view is empty", (JsonToken{*_json, _begin}));
+            return JsonToken{*_json, _end - 1};
+        }
+
+        /**
+         * @brief Token access
+         *
+         * Expects that @p i is less than @ref size().
+         */
+        JsonToken operator[](std::size_t i) const {
+            CORRADE_DEBUG_ASSERT(_begin + i < _end,
+                "Utility::JsonView::operator[](): index" << i << "out of range for" << _end - _begin << "elements", (JsonToken{*_json, _begin}));
+            return JsonToken{*_json, _begin + i};
+        }
 
     private:
         friend Json;
         friend JsonToken;
 
-        explicit JsonView(const JsonToken* begin, const JsonToken* end) noexcept: _begin{begin}, _end{end} {}
+        explicit JsonView(const Implementation::JsonData& json, std::size_t begin, std::size_t size) noexcept: _json{&json}, _begin{begin}, _end{begin + size} {}
 
-        const JsonToken* _begin;
-        const JsonToken* _end;
+        /* Is never null, just avoiding a Containers::Reference dependency */
+        const Implementation::JsonData* _json;
+        std::size_t _begin, _end;
 };
 
 /**
@@ -2364,7 +2637,54 @@ Returned from @ref Json::parseObject() and @ref JsonToken::asObject(). See
 
 @experimental
 */
-typedef JsonView<JsonObjectItem> JsonObjectView;
+class CORRADE_UTILITY_EXPORT JsonObjectView {
+    public:
+        /** @brief Iterator to the first element */
+        JsonObjectIterator begin() const {
+            return JsonObjectIterator{*_json, _begin};
+        }
+        /** @overload */
+        JsonObjectIterator cbegin() const {
+            return JsonObjectIterator{*_json, _begin};
+        }
+
+        /** @brief Iterator to (one item after) the last element */
+        JsonObjectIterator end() const {
+            return JsonObjectIterator{*_json, _end};
+        }
+        /** @overload */
+        JsonObjectIterator cend() const {
+            return JsonObjectIterator{*_json, _end};
+        }
+
+        /**
+         * @brief Find an object value by key
+         *
+         * Calls @ref JsonToken::find(Containers::StringView) const on the
+         * enclosing object token. Useful for performing a lookup directly on
+         * the value returned from @ref Json::parseObject().
+         */
+        JsonIterator find(Containers::StringView key) const;
+
+        /**
+         * @brief Access an object value by key
+         *
+         * Calls @ref JsonToken::operator[](Containers::StringView) const on
+         * the enclosing object token. Useful for performing a lookup directly
+         * on the value returned from @ref Json::parseObject().
+         */
+        JsonToken operator[](Containers::StringView key) const;
+
+    private:
+        friend Json;
+        friend JsonToken;
+
+        explicit JsonObjectView(const Implementation::JsonData& json, std::size_t begin, std::size_t size) noexcept: _json{&json}, _begin{begin}, _end{begin + size} {}
+
+        /* Is never null, just avoiding a Containers::Reference dependency */
+        const Implementation::JsonData* _json;
+        std::size_t _begin, _end;
+};
 
 /**
 @brief JSON array view
@@ -2375,124 +2695,156 @@ Returned from @ref Json::parseArray() and @ref JsonToken::asArray(). See
 
 @experimental
 */
-typedef JsonView<JsonArrayItem> JsonArrayView;
+class CORRADE_UTILITY_EXPORT JsonArrayView {
+    public:
+        /** @brief Iterator to the first element */
+        JsonArrayIterator begin() const {
+            return JsonArrayIterator{*_json, 0, _begin};
+        }
+        /** @overload */
+        JsonArrayIterator cbegin() const {
+            return JsonArrayIterator{*_json, 0, _begin};
+        }
 
-inline JsonToken::Type JsonToken::type() const {
-    #ifndef CORRADE_TARGET_32BIT
-    return Type(_sizeFlagsParsedTypeType & TypeMask);
-    #else
-    /* If NaN is set, the type is stored */
-    if((_childCountFlagsTypeNan & (NanMask|SignMask)) == NanMask)
-        return Type(_childCountFlagsTypeNan & TypeMask);
-    /* Otherwise it's implicitly a number */
-    return Type::Number;
-    #endif
+        /** @brief Iterator to (one item after) the last element */
+        JsonArrayIterator end() const {
+            /* JsonArrayIterator cannot be decremented and thus
+               JsonArrayItem::index() cannot be called, thus the index is never
+               used for anything and can be 0 for end() as well */
+            return JsonArrayIterator{*_json, 0, _end};
+        }
+        /** @overload */
+        JsonArrayIterator cend() const {
+            return JsonArrayIterator{*_json, 0, _end};
+        }
+
+        /**
+         * @brief Find an array value by index
+         *
+         * Calls @ref JsonToken::find(std::size_t) const on the enclosing array
+         * token. Useful for performing a lookup directly on the value returned
+         * from @ref Json::parseArray().
+         */
+        JsonIterator find(std::size_t index) const;
+
+        /**
+         * @brief Access an array value by index
+         *
+         * Calls @ref JsonToken::operator[](std::size_t) const on the enclosing
+         * array token. Useful for performing a lookup directly on the value
+         * returned from @ref Json::parseArray().
+         */
+        JsonToken operator[](std::size_t index) const;
+
+    private:
+        friend Json;
+        friend JsonToken;
+
+        explicit JsonArrayView(const Implementation::JsonData& json, std::size_t begin, std::size_t size) noexcept: _json{&json}, _begin{begin}, _end{begin + size} {}
+
+        /* Is never null, just avoiding a Containers::Reference dependency */
+        const Implementation::JsonData* _json;
+        std::size_t _begin, _end;
+};
+
+inline const JsonTokenData& JsonToken::token() const {
+    return _json->tokens[_token];
 }
 
-inline bool JsonToken::isParsed() const {
-    #ifndef CORRADE_TARGET_32BIT
-    return _sizeFlagsParsedTypeType & ParsedTypeMask;
-    #else
-    /* If NaN is set, it's parsed if any bit of the parsed type is set */
-    if((_childCountFlagsTypeNan & (NanMask|SignMask)) == NanMask)
-        return _childCountFlagsTypeNan & FlagParsed;
-    /* Otherwise it's an already parsed number */
-    return true;
-    #endif
+inline JsonIterator JsonToken::firstChild() const {
+    /* The only types that can have children are arrays, objects and string
+       keys, which are all large types */
+    const JsonTokenData& data = _json->tokens[_token];
+    if((data._dataTypeNan & JsonToken::NanMask) == JsonToken::Nan && (data._dataTypeNan & JsonToken::TypeIsLarge)) {
+        /* String keys have at least one child always */
+        if((data._dataTypeNan & JsonToken::TypeLargeIsString) && (data._dataTypeNan & JsonToken::TypeLargeStringIsKey))
+            return JsonIterator{_json, _token + 1};
+
+        /* Arrays and objects have a child only if child count is non-zero */
+        const std::uint64_t type = data._dataTypeNan & JsonToken::TypeLargeMask & ~JsonToken::TypeSmallLargeIsParsed;
+        if(type == JsonToken::TypeLargeArray ||
+           type == JsonToken::TypeLargeObject)
+            return data._dataTypeNan & JsonToken::TypeLargeDataMask ?
+                JsonIterator{_json, _token + 1} : JsonIterator{};
+    }
+
+    /* Otherwise the type is a non-key string or is small (null, bool, number)
+       or it's a 64-bit parsed type, neither of which have children */
+    return {};
 }
 
-inline JsonToken::ParsedType JsonToken::parsedType() const {
-    #ifndef CORRADE_TARGET_32BIT
-    return ParsedType(_sizeFlagsParsedTypeType & ParsedTypeMask);
-    #else
-    /* If NaN is set, the parsed type is either None or Other */
-    if((_childCountFlagsTypeNan & (NanMask|SignMask)) == NanMask)
-        return _childCountFlagsTypeNan & FlagParsed ?
-            ParsedType::Other : ParsedType::None;
-    /* Otherwise it's a number and the parsed type is stored in size */
-    return ParsedType(_sizeParsedType & ParsedTypeMask);
-    #endif
-}
-
-inline const JsonToken* JsonToken::firstChild() const {
-    #ifndef CORRADE_TARGET_32BIT
-    /* The token has a child if it's an object or an array and has children */
-    if((((_sizeFlagsParsedTypeType & TypeMask) == TypeObject ||
-         (_sizeFlagsParsedTypeType & TypeMask) == TypeArray) && _childCount) ||
-        /* or if it's an object key */
-        (_sizeFlagsParsedTypeType & FlagStringKey))
-        return this + 1;
-    #else
-    /* The token has a child if it's not a parsed number and */
-    if(((_childCountFlagsTypeNan & (NanMask|SignMask)) == NanMask) &&
-      /* it's an object with non-zero child count */
-    ((((_childCountFlagsTypeNan & TypeMask) == TypeObject ||
-       (_childCountFlagsTypeNan & TypeMask) == TypeArray) &&
-       (_childCountFlagsTypeNan & ChildCountMask)) ||
-       /* or it's an object key */
-       (_childCountFlagsTypeNan & FlagStringKey)))
-        return this + 1;
-    #endif
-    return nullptr;
+inline JsonIterator JsonToken::next() const {
+    return JsonIterator{_json, _token + _json->tokens[_token].childCount() + 1};
 }
 
 inline std::nullptr_t JsonToken::asNull() const {
-    CORRADE_ASSERT(type() == Type::Null && isParsed(),
+    CORRADE_ASSERT((_json->tokens[_token]._dataTypeNan & TypeSmallMask) == (TypeSmallNull|TypeSmallLargeIsParsed),
         /* {} causes a -Wzero-as-null-pointer-constant warning on GCC 4.8 */
         "Utility::JsonToken::asNull(): token is" << (isParsed() ? "a parsed" : "an unparsed") << type(), nullptr);
     return nullptr;
 }
 
 inline bool JsonToken::asBool() const {
-    CORRADE_ASSERT(type() == Type::Bool && isParsed(),
+    const JsonTokenData& data = _json->tokens[_token];
+    CORRADE_ASSERT((data._dataTypeNan & TypeSmallMask) == (TypeSmallBool|TypeSmallLargeIsParsed),
         "Utility::JsonToken::asBool(): token is" << (isParsed() ? "a parsed" : "an unparsed") << type(), {});
-    return _parsedBool;
+    return data._parsedBool;
 }
 
 inline double JsonToken::asDouble() const {
-    CORRADE_ASSERT(parsedType() == ParsedType::Double,
+    CORRADE_ASSERT((_json->tokenOffsetsSizes[_token]._sizeType & TypeTokenSizeMask) == TypeTokenSizeDouble,
         "Utility::JsonToken::asDouble(): token is a" << type() << "parsed as" << parsedType(), {});
-    return _parsedDouble;
+    return _json->tokens[_token]._parsedDouble;
 }
 
 inline float JsonToken::asFloat() const {
-    CORRADE_ASSERT(parsedType() == ParsedType::Float,
+    const JsonTokenData& data = _json->tokens[_token];
+    CORRADE_ASSERT((data._dataTypeNan & TypeSmallMask) == TypeSmallFloat,
         "Utility::JsonToken::asFloat(): token is a" << type() << "parsed as" << parsedType(), {});
-    return _parsedFloat;
+    return data._parsedFloat;
 }
 
 inline std::uint32_t JsonToken::asUnsignedInt() const {
-    CORRADE_ASSERT(parsedType() == ParsedType::UnsignedInt,
+    const JsonTokenData& data = _json->tokens[_token];
+    CORRADE_ASSERT((data._dataTypeNan & TypeSmallMask) == TypeSmallUnsignedInt,
         "Utility::JsonToken::asUnsignedInt(): token is a" << type() << "parsed as" << parsedType(), {});
-    return _parsedUnsignedInt;
+    return data._parsedUnsignedInt;
 }
 
 inline std::int32_t JsonToken::asInt() const {
-    CORRADE_ASSERT(parsedType() == ParsedType::Int,
+    const JsonTokenData& data = _json->tokens[_token];
+    CORRADE_ASSERT((data._dataTypeNan & TypeSmallMask) == TypeSmallInt,
         "Utility::JsonToken::asInt(): token is a" << type() << "parsed as" << parsedType(), {});
-    return _parsedInt;
+    return data._parsedInt;
 }
 
 inline std::uint64_t JsonToken::asUnsignedLong() const {
-    CORRADE_ASSERT(parsedType() == ParsedType::UnsignedLong,
+    CORRADE_ASSERT((_json->tokenOffsetsSizes[_token]._sizeType & TypeTokenSizeMask) == TypeTokenSizeUnsignedLong,
         "Utility::JsonToken::asUnsignedLong(): token is a" << type() << "parsed as" << parsedType(), {});
-    return _parsedUnsignedLong;
+    return _json->tokens[_token]._parsedUnsignedLong;
 }
 
 inline std::int64_t JsonToken::asLong() const {
-    CORRADE_ASSERT(parsedType() == ParsedType::Long,
+    CORRADE_ASSERT((_json->tokenOffsetsSizes[_token]._sizeType & TypeTokenSizeMask) == TypeTokenSizeLong,
         "Utility::JsonToken::asLong(): token is a" << type() << "parsed as" << parsedType(), {});
-    return _parsedLong;
+    return _json->tokens[_token]._parsedLong;
 }
 
 inline std::size_t JsonToken::asSize() const {
-    CORRADE_ASSERT(parsedType() == ParsedType::Size,
-        "Utility::JsonToken::asSize(): token is a" << type() << "parsed as" << parsedType(), {});
+    const JsonTokenData& data = _json->tokens[_token];
     #ifndef CORRADE_TARGET_32BIT
-    return _parsedUnsignedLong;
+    CORRADE_ASSERT((_json->tokenOffsetsSizes[_token]._sizeType & TypeTokenSizeMask) == TypeTokenSizeUnsignedLong,
+        "Utility::JsonToken::asSize(): token is a" << type() << "parsed as" << parsedType(), {});
+    return data._parsedUnsignedLong;
     #else
-    return _parsedUnsignedInt;
+    CORRADE_ASSERT((data._dataTypeNan & TypeSmallMask) == TypeSmallUnsignedInt,
+        "Utility::JsonToken::asSize(): token is a" << type() << "parsed as" << parsedType(), {});
+    return data._parsedUnsignedInt;
     #endif
+}
+
+inline JsonToken JsonObjectItem::value() const {
+    return *_token.firstChild();
 }
 
 }}

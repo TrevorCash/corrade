@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -26,15 +26,27 @@
     DEALINGS IN THE SOFTWARE.
 */
 
+#ifdef CORRADE_BUILD_DEPRECATED
 /** @file
  * @brief Class @ref Corrade::Interconnect::Connection
+ * @m_deprecated_since_latest Design of the @ref Corrade::Interconnect library
+ *      relies on member function pointers being unique, which is impossible to
+ *      guarantee across all platform configurations and compilers, leading to
+ *      subtle hard-to-discover bugs. The library is thus scheduled for
+ *      removal, at the moment with no builtin replacement.
  */
+#endif
 
+#include "Corrade/configure.h"
+
+#ifdef CORRADE_BUILD_DEPRECATED
 #include <cstddef>
 
 #include "Corrade/Containers/Reference.h"
 #include "Corrade/Interconnect/Interconnect.h"
 #include "Corrade/Interconnect/visibility.h"
+
+/* File deprecation warning printed in Interconnect.h */
 
 namespace Corrade { namespace Interconnect {
 
@@ -82,7 +94,8 @@ namespace Implementation {
 
             bool operator==(const SignalData& other) const {
                 for(std::size_t i = 0; i != FunctionPointerSize; ++i)
-                    if(data[i] != other.data[i]) return false;
+                    if(data[i] != other.data[i])
+                        return false;
                 return true;
             }
 
@@ -93,7 +106,9 @@ namespace Implementation {
         private:
             /* https://bugzilla.gnome.org/show_bug.cgi?id=776986 */
             #ifndef DOXYGEN_GENERATING_OUTPUT
+            CORRADE_IGNORE_DEPRECATED_PUSH
             friend Interconnect::Emitter;
+            CORRADE_IGNORE_DEPRECATED_POP
             friend SignalDataHash;
             #endif
 
@@ -109,6 +124,11 @@ namespace Implementation {
 
 /**
 @brief Connection
+@m_deprecated_since_latest Design of the @ref Interconnect library relies on
+    member function pointers being unique, which is impossible to guarantee
+    across all platform configurations and compilers, leading to subtle
+    hard-to-discover bugs. The library is thus scheduled for removal, at the
+    moment with no builtin replacement.
 
 Returned by @ref Interconnect::connect(), allows to remove the connection
 later using @ref Interconnect::disconnect(). Destruction of the @ref Connection
@@ -119,82 +139,37 @@ disconnect everything connected to given signal using
 @ref Receiver::disconnectAllSlots(), or destroy either the emitter or receiver
 object.
 
-@see @ref interconnect, @ref Emitter, @ref Receiver
+@see @ref Emitter, @ref Receiver
 */
-class CORRADE_INTERCONNECT_EXPORT Connection {
-    public:
-        #ifdef CORRADE_BUILD_DEPRECATED
-        /**
-         * @brief Whether the connection exists
-         * @m_deprecated_since{2019,10} This function is dangerous as it has no
-         *      way to check that the original @ref Emitter object still
-         *      exists, use @ref Emitter::isConnected() instead.
-         */
-        CORRADE_DEPRECATED("dangerous, use Emitter::isConnected() instead") bool isConnected() const;
-
-        /**
-         * @brief Remove the connection
-         * @m_deprecated_since{2019,10} This function is dangerous as it has no
-         *      way to check that the original @ref Emitter object still
-         *      exists, use @ref Interconnect::disconnect() instead.
-         */
-        CORRADE_DEPRECATED("dangerous, use Interconnect::disconnect() instead") void disconnect();
-
-        /**
-         * @brief Whether connection is possible
-         * @m_deprecated_since{2019,10} Re-connecting a disconnected signal is
-         *      not possible anymore in order to make the library more
-         *      efficient. This function now just returns the value of (also
-         *      deprecated) @ref isConnected().
-         */
-        CORRADE_DEPRECATED("re-connecting a disconnected signal is not possible anymore") bool isConnectionPossible() const {
-            CORRADE_IGNORE_DEPRECATED_PUSH
-            return isConnected();
-            CORRADE_IGNORE_DEPRECATED_POP
-        }
-
-        /**
-         * @brief Re-establish the connection
-         * @m_deprecated_since{2019,10} Re-connecting a disconnected signal is
-         *      not possible anymore in order to make the library more
-         *      efficient. This function now just returns the value of (also
-         *      deprecated) @ref isConnected().
-         */
-        CORRADE_DEPRECATED("re-connecting a disconnected signal is not possible anymore") bool connect() {
-            CORRADE_IGNORE_DEPRECATED_PUSH
-            return isConnected();
-            CORRADE_IGNORE_DEPRECATED_POP
-        }
-        #endif
-
+class CORRADE_DEPRECATED("the Interconnect library is broken by design and thus obsolete") CORRADE_INTERCONNECT_EXPORT Connection {
     #ifdef DOXYGEN_GENERATING_OUTPUT
     private:
+    #else
+    public:
     #endif
-        explicit Connection(
-            #ifdef CORRADE_BUILD_DEPRECATED
-            Emitter& emitter,
-            #endif
-            Implementation::SignalData signal, Implementation::ConnectionData& data);
+        explicit Connection(Implementation::SignalData signal, Implementation::ConnectionData& data): _signal{signal}, _data{&data} {}
 
     private:
         /* https://bugzilla.gnome.org/show_bug.cgi?id=776986 */
         #ifndef DOXYGEN_GENERATING_OUTPUT
+        CORRADE_IGNORE_DEPRECATED_PUSH
         friend Emitter;
         friend Receiver;
         /* Interestingly enough, unlike in Emitter.h, here MinGW GCC doesn't
            warn about disconnect() being redeclared without a dllimport
            attribute. */
         friend CORRADE_INTERCONNECT_EXPORT bool disconnect(Emitter&, const Connection&);
+        CORRADE_IGNORE_DEPRECATED_POP
         #endif
 
-        #ifdef CORRADE_BUILD_DEPRECATED
-        Containers::Reference<Emitter> _emitter;
-        #endif
         Implementation::SignalData _signal;
         /* Note: this might become dangling at some point */
         Implementation::ConnectionData* _data;
 };
 
 }}
+#else
+#error the Interconnect library is broken by design and thus obsolete
+#endif
 
 #endif

@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -146,7 +146,7 @@ text is not empty, the returned array contains a sentinel null terminator
 (i.e., not counted into its size).
 @partialsupport Available only on @ref CORRADE_TARGET_WINDOWS "Windows" to be
     used when dealing directly with Windows Unicode APIs. Other code should
-    always use UTF-8, see http://utf8everywhere.org for more information.
+    always use UTF-8, see https://utf8everywhere.org for more information.
 */
 /* Not named utf16() in order to avoid clashes with potential portable utf16()
    implementation in the future. */
@@ -168,7 +168,7 @@ is easy interaction with Windows Unicode APIs, thus the function doesn't take
 @cpp char16_t @ce but rather a @cpp wchar_t @ce.
 @partialsupport Available only on @ref CORRADE_TARGET_WINDOWS "Windows" to be
     used when dealing directly with Windows Unicode APIs. Other code should
-    always use UTF-8, see http://utf8everywhere.org for more information.
+    always use UTF-8, see https://utf8everywhere.org for more information.
 */
 CORRADE_UTILITY_EXPORT Containers::String narrow(Containers::ArrayView<const wchar_t> text);
 

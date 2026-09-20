@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -46,7 +46,10 @@ struct BoolPtr {
     BoolPtr(BoolPtr&& other): a{other.a}, b{other.b} {
         other.b = nullptr;
     }
-    ~BoolPtr() { if(a) delete b; }
+    ~BoolPtr() {
+        if(a)
+            delete b;
+    }
     BoolPtr& operator=(const BoolPtr&) = delete;
     /* Clang complains this function is unused. But removing it may have
        unintended consequences, so don't. */
@@ -101,9 +104,12 @@ namespace Test { namespace {
 struct PairTest: TestSuite::Tester {
     explicit PairTest();
 
+    #ifdef CORRADE_BUILD_DEPRECATED
     void constructDefaultInit();
+    #endif
     void constructValueInit();
     void constructNoInit();
+    void constructNoInitNoDefaultConstructor();
     void constructCopyCopy();
     void constructCopyCopyMake();
     void constructCopyMove();
@@ -136,11 +142,15 @@ struct PairTest: TestSuite::Tester {
 };
 
 PairTest::PairTest() {
-    addTests({&PairTest::constructDefaultInit,
+    addTests({
+              #ifdef CORRADE_BUILD_DEPRECATED
+              &PairTest::constructDefaultInit,
+              #endif
               &PairTest::constructValueInit},
         &PairTest::resetCounters, &PairTest::resetCounters);
 
-    addTests({&PairTest::constructNoInit});
+    addTests({&PairTest::constructNoInit,
+              &PairTest::constructNoInitNoDefaultConstructor});
 
     addTests({&PairTest::constructCopyCopy,
               &PairTest::constructCopyCopyMake,
@@ -252,15 +262,20 @@ int Movable::constructed = 0;
 int Movable::destructed = 0;
 int Movable::moved = 0;
 
+#ifdef CORRADE_BUILD_DEPRECATED
 void PairTest::constructDefaultInit() {
     {
+        CORRADE_IGNORE_DEPRECATED_PUSH
         Pair<float, int> aTrivial{Corrade::DefaultInit};
+        CORRADE_IGNORE_DEPRECATED_POP
         /* Trivial types are uninitialized, nothing to verify here. Funnily
            enough, as the constructor is constexpr but the default
            initialization of trivial types itself isn't, the compiler doesn't
            even complain the variable is unused. */
 
+        CORRADE_IGNORE_DEPRECATED_PUSH
         Pair<Copyable, Copyable> a{Corrade::DefaultInit};
+        CORRADE_IGNORE_DEPRECATED_POP
         CORRADE_COMPARE(a.first().a, 0);
         CORRADE_COMPARE(a.second().a, 0);
 
@@ -278,12 +293,14 @@ void PairTest::constructDefaultInit() {
     /* Can't test constexpr on trivial types because DefaultInit leaves them
        uninitialized */
     struct Foo { int a = 3; };
+    CORRADE_IGNORE_DEPRECATED_PUSH
     #ifndef CORRADE_MSVC2015_COMPATIBILITY
     /* Can't, because MSVC 2015 forces me to touch the members, which then
        wouldn't be a default initialization. */
     constexpr
     #endif
     Pair<Foo, Foo> b{Corrade::DefaultInit};
+    CORRADE_IGNORE_DEPRECATED_POP
     CORRADE_COMPARE(b.first().a, 3);
     CORRADE_COMPARE(b.second().a, 3);
 
@@ -294,6 +311,7 @@ void PairTest::constructDefaultInit() {
     /* Implicit construction is not allowed */
     CORRADE_VERIFY(!std::is_convertible<Corrade::DefaultInitT, Pair<Copyable, Copyable>>::value);
 }
+#endif
 
 void PairTest::constructValueInit() {
     {
@@ -398,6 +416,36 @@ void PairTest::constructNoInit() {
     CORRADE_VERIFY(!std::is_convertible<Corrade::NoInitT, Pair<int, Copyable>>::value);
     CORRADE_VERIFY(!std::is_convertible<Corrade::NoInitT, Pair<Copyable, int>>::value);
     CORRADE_VERIFY(!std::is_convertible<Corrade::NoInitT, Pair<Copyable, Copyable>>::value);
+}
+
+/* A variant of these is used in ArrayTest, StaticArrayTest and TripleTest */
+struct NoDefaultConstructor {
+    /* Clang complains this one is unused. Well, yes, it's here to make the
+       struct non-default-constructible. */
+    CORRADE_UNUSED /*implicit*/ NoDefaultConstructor(int a): a{a} {}
+    /*implicit*/ NoDefaultConstructor(Corrade::NoInitT) {}
+    int a;
+};
+template<class T> struct Wrapped {
+    /* This works only if T is default-constructible */
+    /*implicit*/ Wrapped(): a{} {}
+    /*implicit*/ Wrapped(Corrade::NoInitT): a{Corrade::NoInit} {}
+    T a;
+};
+
+void PairTest::constructNoInitNoDefaultConstructor() {
+    /* In libstdc++ before version 8 std::is_trivially_constructible<T> doesn't
+       work with (template) types where the default constructor isn't usable,
+       failing compilation instead of producing std::false_type; in version 4.8
+       this trait isn't available at all. std::is_trivial is used instead,
+       verify that it compiles correctly everywhere. */
+
+    Pair<int, Wrapped<NoDefaultConstructor>> a{Corrade::NoInit};
+    Pair<Wrapped<NoDefaultConstructor>, int> b{Corrade::NoInit};
+    Pair<Wrapped<NoDefaultConstructor>, Wrapped<NoDefaultConstructor>> c{Corrade::NoInit};
+
+    /* No way to test anything here */
+    CORRADE_VERIFY(true);
 }
 
 void PairTest::constructCopyCopy() {
@@ -903,7 +951,8 @@ void PairTest::accessRvalueLifetimeExtension() {
         }
 
         ~DiesLoudly() {
-            if(orphaned) Debug{} << "dying!";
+            if(orphaned)
+                Debug{} << "dying!";
         }
 
         bool orphaned = true;

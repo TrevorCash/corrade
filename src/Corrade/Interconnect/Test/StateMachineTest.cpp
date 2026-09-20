@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -23,6 +23,8 @@
     FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
     DEALINGS IN THE SOFTWARE.
 */
+
+#define _CORRADE_NO_DEPRECATED_INTERCONNECT
 
 #include "Corrade/Containers/String.h"
 #include "Corrade/Interconnect/StateMachine.h"
@@ -52,6 +54,7 @@ enum class Input: std::uint8_t {
     KeyB
 };
 
+CORRADE_IGNORE_DEPRECATED_PUSH
 typedef Interconnect::StateMachine<2, 2, State, Input> StateMachine;
 
 void StateMachineTest::signalData() {
@@ -113,6 +116,7 @@ void StateMachineTest::test() {
         "going from end to start\n"
         "start entered, previous 1\n");
 }
+CORRADE_IGNORE_DEPRECATED_POP
 
 }}}}
 

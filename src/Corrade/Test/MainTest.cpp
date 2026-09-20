@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -46,6 +46,10 @@ MainTest::MainTest(): TestSuite::Tester{TesterConfiguration{}.setSkippedArgument
     addTests({&MainTest::utf8output,
               &MainTest::colors,
               &MainTest::arguments});
+
+    #ifdef TEST_WIN32_EXECUTABLE
+    setTestName("Corrade::Test::WindowsMainTest");
+    #endif
 }
 
 void MainTest::utf8output() {

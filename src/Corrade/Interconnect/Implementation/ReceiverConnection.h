@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -31,6 +31,7 @@
 
 namespace Corrade { namespace Interconnect { namespace Implementation {
 
+CORRADE_IGNORE_DEPRECATED_PUSH
 struct ReceiverConnection {
     explicit ReceiverConnection(Emitter& emitter, Implementation::SignalData signal, Implementation::ConnectionData& data) noexcept: emitter{emitter}, signal{signal}, data{data} {}
 
@@ -38,6 +39,7 @@ struct ReceiverConnection {
     Implementation::SignalData signal;
     Containers::Reference<Implementation::ConnectionData> data;
 };
+CORRADE_IGNORE_DEPRECATED_POP
 
 }}}
 

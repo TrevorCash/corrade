@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -56,8 +56,13 @@ BitArray::BitArray(Corrade::NoInitT, std::size_t size):
     #endif
     _sizeOffset{size << 3}, _deleter{}
 {
+    #ifdef CORRADE_TARGET_32BIT
+    /* It makes little sense to check the size constraint on 64-bit, if 64-bit
+       code happens to go over then it's got bigger problems than this
+       assert. */
     CORRADE_ASSERT(size < std::size_t{1} << (sizeof(std::size_t)*8 - 3),
         "Containers::BitArray: size expected to be smaller than 2^" << Utility::Debug::nospace << (sizeof(std::size_t)*8 - 3) << "bits, got" << size, );
+    #endif
     _data = size ? new char[(size + 7) >> 3] : nullptr;
 }
 
@@ -67,10 +72,17 @@ BitArray::BitArray(Corrade::DirectInitT, const std::size_t size, const bool valu
     #endif
     _sizeOffset{size << 3}, _deleter{}
 {
+    #ifdef CORRADE_TARGET_32BIT
+    /* It makes little sense to check the size constraint on 64-bit, if 64-bit
+       code happens to go over then it's got bigger problems than this
+       assert. */
     CORRADE_ASSERT(size < std::size_t{1} << (sizeof(std::size_t)*8 - 3),
         "Containers::BitArray: size expected to be smaller than 2^" << Utility::Debug::nospace << (sizeof(std::size_t)*8 - 3) << "bits, got" << size, );
-    if(!size) _data = nullptr;
-    else if(!value) _data = new char[(size + 7) >> 3]{};
+    #endif
+    if(!size)
+        _data = nullptr;
+    else if(!value)
+        _data = new char[(size + 7) >> 3]{};
     else {
         _data = new char[(size + 7) >> 3];
         std::memset(_data, 0xff, (size + 7) >> 3);
@@ -86,8 +98,13 @@ BitArray::BitArray(void* data, const std::size_t offset, const std::size_t size,
 {
     CORRADE_ASSERT(offset < 8,
         "Containers::BitArray: offset expected to be smaller than 8 bits, got" << offset, );
+    #ifdef CORRADE_TARGET_32BIT
+    /* It makes little sense to check the size constraint on 64-bit, if 64-bit
+       code happens to go over then it's got bigger problems than this
+       assert. */
     CORRADE_ASSERT(size < std::size_t{1} << (sizeof(std::size_t)*8 - 3),
         "Containers::BitArray: size expected to be smaller than 2^" << Utility::Debug::nospace << (sizeof(std::size_t)*8 - 3) << "bits, got" << size, );
+    #endif
 }
 
 BitArray::~BitArray() {
@@ -96,8 +113,7 @@ BitArray::~BitArray() {
            initial offset -- if offset is 0 and size is 0, it gets 0, but if
            offset is 7 and size 0, then it gets 1. */
         _deleter(_data, ((_sizeOffset >> 3) + (_sizeOffset & 0x07) + 7) >> 3);
-    }
-    else delete[] _data;
+    } else delete[] _data;
 }
 
 BitArray::operator MutableBitArrayView() {
@@ -170,7 +186,8 @@ Utility::Debug& operator<<(Utility::Debug& debug, const StridedBitArrayView1D& v
     debug << "{" << Utility::Debug::nospace;
 
     for(std::size_t i = 0, iMax = value.size(); i != iMax; ++i) {
-        if(i && i % 8 == 0) debug << ",";
+        if(i && i % 8 == 0)
+            debug << ",";
 
         debug << (value[i] ? "1" : "0") << Utility::Debug::nospace;
     }

@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -50,7 +50,8 @@ namespace Implementation {
     };
     template<class T> struct CallDeleter<T, void(*)(T*, std::size_t)> {
         void operator()(void(*deleter)(T*, std::size_t), T* data, std::size_t size) const {
-            if(deleter) deleter(data, size);
+            if(deleter)
+                deleter(data, size);
             /** @todo could this have some compile-time check for type
                 completeness like Pointer has with IsComplete, but one that
                 doesn't trigger if the deleter is set? having that checked only
@@ -59,17 +60,47 @@ namespace Implementation {
         }
     };
 
-    template<class T, typename std::enable_if<std::is_trivial<T>::value, int>::type = 0> T* noInitAllocate(std::size_t size) {
+    template<class T, typename std::enable_if<
+        /* std::is_trivially_constructible fails for (template) types where
+           default constructor isn't usable in libstdc++ before version 8, OTOH
+           std::is_trivial is deprecated in C++26 so can't use that one either.
+           Furthermore, libstdc++ before 6.1 doesn't have _GLIBCXX_RELEASE, so
+           there comparison will ealuate to 0 < 8 and pass as well. Repro case
+           in ArrayTest::constructNoInitNoDefaultConstructor(). */
+        #if defined(CORRADE_TARGET_LIBSTDCXX) && _GLIBCXX_RELEASE < 8
+        std::is_trivial<T>::value
+        #else
+        std::is_trivially_constructible<T>::value
+        #endif
+    , int>::type = 0> T* noInitAllocate(std::size_t size) {
         return new T[size];
     }
-    template<class T, typename std::enable_if<!std::is_trivial<T>::value, int>::type = 0> T* noInitAllocate(std::size_t size) {
+    template<class T, typename std::enable_if<!
+        #if defined(CORRADE_TARGET_LIBSTDCXX) && _GLIBCXX_RELEASE < 8
+        std::is_trivial<T>::value
+        #else
+        std::is_trivially_constructible<T>::value
+        #endif
+    , int>::type = 0> T* noInitAllocate(std::size_t size) {
         return reinterpret_cast<T*>(new char[size*sizeof(T)]);
     }
 
-    template<class T, typename std::enable_if<std::is_trivial<T>::value, int>::type = 0> auto noInitDeleter() -> void(*)(T*, std::size_t) {
+    template<class T, typename std::enable_if<
+        #if defined(CORRADE_TARGET_LIBSTDCXX) && _GLIBCXX_RELEASE < 8
+        std::is_trivial<T>::value
+        #else
+        std::is_trivially_constructible<T>::value
+        #endif
+    , int>::type = 0> auto noInitDeleter() -> void(*)(T*, std::size_t) {
         return nullptr; /* using the default deleter for T */
     }
-    template<class T, typename std::enable_if<!std::is_trivial<T>::value, int>::type = 0> auto noInitDeleter() -> void(*)(T*, std::size_t) {
+    template<class T, typename std::enable_if<!
+        #if defined(CORRADE_TARGET_LIBSTDCXX) && _GLIBCXX_RELEASE < 8
+        std::is_trivial<T>::value
+        #else
+        std::is_trivially_constructible<T>::value
+        #endif
+    , int>::type = 0> auto noInitDeleter() -> void(*)(T*, std::size_t) {
         return [](T* data, std::size_t size) {
             if(data) for(T *it = data, *end = data + size; it != end; ++it)
                 it->~T();
@@ -105,19 +136,11 @@ non @cpp const @ce overloads.
 
 @subsection Containers-Array-usage-initialization Array initialization
 
-The array is by default *value-initialized*, which means that trivial types
-are zero-initialized and the default constructor is called on other types. It
-is possible to initialize the array in a different way using so-called *tags*:
+It is possible to initialize the array in different ways using so-called *tags*:
 
--   @ref Array(DefaultInitT, std::size_t) leaves trivial types uninitialized
-    and calls the default constructor elsewhere. In other words,
-    @cpp new T[size] @ce. Because of the differing behavior for trivial types
-    it's better to explicitly use either the @ref ValueInit or @ref NoInit
-    variants instead.
--   @ref Array(ValueInitT, std::size_t) is equivalent to the default case,
-    zero-initializing trivial types and calling the default constructor
-    elsewhere. Useful when you want to make the choice appear explicit. In
-    other words, @cpp new T[size]{} @ce.
+-   @ref Array(ValueInitT, std::size_t), used in the snippet above, is the
+    go-to default, zero-initializing trivial types and calling the default
+    constructor elsewhere. In other words, @cpp new T[size]{} @ce.
 -   @ref Array(DirectInitT, std::size_t, Args&&... args) constructs all
     elements of the array using provided arguments. In other words,
     @cpp new T[size]{T{args...}, T{args...}, …} @ce.
@@ -126,7 +149,7 @@ is possible to initialize the array in a different way using so-called *tags*:
     @ref array(ArrayView<const T>) / @ref array(std::initializer_list<T>)
     shorthand allocates unitialized memory and then copy-constructs all
     elements from the list. In other words, @cpp new T[size]{args...} @ce. The
-    class deliberately *doesn't* provide an implicit @ref std::initializer_list
+    class currently *doesn't* provide an implicit @ref std::initializer_list
     constructor due to @ref Containers-Array-initializer-list "reasons described below".
 -   @ref Array(NoInitT, std::size_t) does not initialize anything. Useful for
     trivial types when you'll be overwriting the contents anyway, for
@@ -286,14 +309,20 @@ Corrade type                    | ↭ | STL type
 @m_class{m-block m-warning}
 
 @par Conversion from std::initializer_list
-    The class deliberately *doesn't* provide a @ref std::initializer_list
+    The class currently *doesn't* provide a @ref std::initializer_list
     constructor to prevent the same usability issues as with @ref std::vector
     --- see the snippet below. Instead you're expected to use either the
     @ref Array(InPlaceInitT, std::initializer_list<T>) constructor or the
-    @ref array(std::initializer_list<T>) shorthand, which are both more
-    explicit and thus should prevent accidental use:
+    @ref array(std::initializer_list<T>) shorthand:
 @par
     @snippet Containers-stl.cpp Array-initializer-list
+@par
+    This is considered to be a design error and the @ref Array(std::size_t)
+    constructor is being deprecated in favor of @ref Array(ValueInitT, std::size_t)
+    for this reason. Once the deprecated constructor is removed and enough time
+    passes to ensure no code is accidentally using it anymore, an initializer
+    list constructor --- no longer ambiguous in certain cases --- will be
+    added.
 
 <b></b>
 
@@ -361,21 +390,28 @@ class Array {
         /*implicit*/ Array() noexcept: _data(nullptr), _size(0), _deleter{} {}
         #endif
 
+        #ifdef CORRADE_BUILD_DEPRECATED
         /**
          * @brief Construct a default-initialized array
+         * @m_deprecated_since_latest Because C++'s default initialization
+         *      keeps trivial types not initialized, using it is unnecessarily
+         *      error prone. Use either @ref Array(ValueInitT, std::size_t) or
+         *      @ref Array(NoInitT, std::size_t) instead to make the choice
+         *      about content initialization explicit. For trivial types, this
+         *      constructor behaves exactly the same as
+         *      @ref Array(NoInitT, std::size_t).
          *
          * Creates an array of given size, the contents are default-initialized
          * (i.e. trivial types are not initialized, default constructor called
-         * otherwise). If the size is zero, no allocation is done. Because of
-         * the differing behavior for trivial types it's better to explicitly
-         * use either the @ref Array(ValueInitT, std::size_t) or the
-         * @ref Array(NoInitT, std::size_t) variant instead.
+         * otherwise). If the size is zero, no allocation is done.
          * @see @relativeref{Corrade,DefaultInit},
          *      @ref Array(DirectInitT, std::size_t, Args&&... args),
-         *      @ref Array(InPlaceInitT, std::initializer_list<T>),
-         *      @ref array(std::initializer_list<T>), @ref std::is_trivial
+         *      @ref Array(InPlaceInitT, ArrayView<const T>),
+         *      @ref array(ArrayView<const T>),
+         *      @ref std::is_trivially_constructible
          */
-        explicit Array(Corrade::DefaultInitT, std::size_t size): _data{size ? new T[size] : nullptr}, _size{size}, _deleter{nullptr} {}
+        explicit CORRADE_DEPRECATED("use Array(ValueInitT, std::size_t) or Array(NoInitT, std::size_t) instead") Array(Corrade::DefaultInitT, std::size_t size): _data{size ? new T[size] : nullptr}, _size{size}, _deleter{nullptr} {}
+        #endif
 
         /**
          * @brief Construct a value-initialized array
@@ -385,11 +421,11 @@ class Array {
          * otherwise). This is the same as @ref Array(std::size_t). If the size
          * is zero, no allocation is done.
          * @see @relativeref{Corrade,ValueInit},
-         *      @ref Array(DefaultInitT, std::size_t),
          *      @ref Array(NoInitT, std::size_t),
          *      @ref Array(DirectInitT, std::size_t, Args&&... args),
-         *      @ref Array(InPlaceInitT, std::initializer_list<T>),
-         *      @ref array(std::initializer_list<T>), @ref std::is_trivial
+         *      @ref Array(InPlaceInitT, ArrayView<const T>),
+         *      @ref array(ArrayView<const T>),
+         *      @ref std::is_trivially_constructible
          */
         /* The () instead of {} works around a featurebug in C++ where new T{}
            doesn't work for an explicit defaulted constructor. For details see
@@ -405,24 +441,24 @@ class Array {
          * constructors in a way that's not expressible via any other
          * @ref Array constructor.
          *
-         * For trivial types is equivalent to @ref Array(DefaultInitT, std::size_t),
-         * with @ref deleter() being the default (@cpp nullptr @ce) as well.
-         * For non-trivial types, the data are allocated as a @cpp char @ce
-         * array. Destruction is done using a custom deleter that explicitly
-         * calls the destructor on *all elements* and then deallocates the data
-         * as a @cpp char @ce array again --- which means that for non-trivial
-         * types you're expected to construct all elements using placement new
-         * (or for example @ref std::uninitialized_copy()) in order to avoid
-         * calling destructors on uninitialized memory:
+         * For trivial types is equivalent to @cpp new T[size] @ce (as opposed
+         * to @cpp new T[size]{} @ce), with @ref deleter() being the default
+         * (@cpp nullptr @ce). For non-trivial types, the data are allocated as
+         * a @cpp char @ce array and destruction is done using a custom deleter
+         * that explicitly calls the destructor on *all elements* and then
+         * deallocates the data as a @cpp char @ce array again --- which means
+         * that for non-trivial types you're expected to construct all elements
+         * using placement new (or for example @ref std::uninitialized_copy())
+         * in order to avoid calling destructors on uninitialized memory:
          *
          * @snippet Containers.cpp Array-NoInit
          *
          * @see @relativeref{Corrade,NoInit},
          *      @ref Array(ValueInitT, std::size_t),
          *      @ref Array(DirectInitT, std::size_t, Args&&... args),
-         *      @ref Array(InPlaceInitT, std::initializer_list<T>),
-         *      @ref array(std::initializer_list<T>), @ref deleter(),
-         *      @ref std::is_trivial
+         *      @ref Array(InPlaceInitT, ArrayView<const T>),
+         *      @ref array(ArrayView<const T>), @ref deleter(),
+         *      @ref std::is_trivially_constructible
          */
         explicit Array(Corrade::NoInitT, std::size_t size): _data{size ? Implementation::noInitAllocate<T>(size) : nullptr}, _size{size}, _deleter{Implementation::noInitDeleter<T>()} {}
 
@@ -433,10 +469,9 @@ class Array {
          * constructor and then initializes each element with placement new
          * using forwarded @p args.
          * @see @relativeref{Corrade,DirectInit},
-         *      @ref Array(DefaultInitT, std::size_t),
          *      @ref Array(ValueInitT, std::size_t),
-         *      @ref Array(InPlaceInitT, std::initializer_list<T>),
-         *      @ref array(std::initializer_list<T>)
+         *      @ref Array(InPlaceInitT, ArrayView<const T>),
+         *      @ref array(ArrayView<const T>)
          */
         template<class ...Args> explicit Array(Corrade::DirectInitT, std::size_t size, Args&&... args);
 
@@ -455,22 +490,23 @@ class Array {
          * @ref Containers-Array-initializer-list "class documentation" for
          * more information.
          * @see @relativeref{Corrade,DirectInit},
-         *      @ref Array(DefaultInitT, std::size_t),
          *      @ref Array(ValueInitT, std::size_t),
          *      @ref Array(DirectInitT, std::size_t, Args&&... args)
          */
         /*implicit*/ Array(Corrade::InPlaceInitT, ArrayView<const T> list);
-
         /** @overload */
         /*implicit*/ Array(Corrade::InPlaceInitT, std::initializer_list<T> list);
 
+        #ifdef CORRADE_BUILD_DEPRECATED
         /**
          * @brief Construct a value-initialized array
+         * @m_deprecated_since_latest Use @ref Array(ValueInitT, std::size_t)
+         *      instead.
          *
          * Alias to @ref Array(ValueInitT, std::size_t).
-         * @see @ref Array(DefaultInitT, std::size_t)
          */
-        explicit Array(std::size_t size): Array{Corrade::ValueInit, size} {}
+        explicit CORRADE_DEPRECATED("use Array(ValueInitT, std::size_t) instead") Array(std::size_t size): Array{Corrade::ValueInit, size} {}
+        #endif
 
         /**
          * @brief Wrap an existing array with an explicit deleter
@@ -549,22 +585,59 @@ class Array {
             return Implementation::ArrayViewConverter<const T, U>::to(*this);
         }
 
-        #ifndef CORRADE_MSVC_COMPATIBILITY
+        #if !defined(CORRADE_MSVC_COMPATIBILITY) || !defined(CORRADE_BUILD_DEPRECATED)
         /** @brief Whether the array is non-empty */
         /* Disabled on MSVC w/o /permissive- to avoid ambiguous operator+()
            when doing pointer arithmetic. */
+        /** @todo remove the ifdef once the operators below are gone */
         explicit operator bool() const { return _data; }
+        #endif
+
+        #ifdef CORRADE_BUILD_DEPRECATED
+        #if !defined(DOXYGEN_GENERATING_OUTPUT) && !defined(CORRADE_MSVC_COMPATIBILITY)
+        /* Added only so `if(!array)` and `if(array)` doesn't produce a
+           deprecation warning due to a non-const operator T* being picked over
+           a const operator bool. On MSVC w/o /permissive- these would cause
+           ambiguity so instead the operator T*() omits the deprecation warning
+           altogether to not produce warning noise for valid usage. */
+        /** @todo remove once the operators below are gone */
+        explicit operator bool() { return _data; }
         #endif
 
         /* `char* a = Containers::Array<char>(5); a[3] = 5;` would result in
            instant segfault, disallowing it in the following conversion
            operators */
 
-        /** @brief Conversion to array type */
-        /*implicit*/ operator T*() & { return _data; }
+        /**
+         * @brief Conversion to array type
+         * @m_deprecated_since_latest Use @ref data() or @ref begin() instead,
+         *      which conveys the intent clearer than an implicit pointer
+         *      conversion.
+         */
+        /*implicit*/
+        #ifndef CORRADE_MSVC_COMPATIBILITY
+        /* On MSVC w/o /permissive- boolean conversion has to use operator T*()
+           as well, as operator bool() causes an ambiguity, so the deprecation
+           warning has to be omitted to not produce warning noise for valid
+           usage, sorry. *Please* regularly use at least one other compiler or
+           build with CORRADE_BUILD_DEPRECATED disabled from time to time to
+           catch use of these deprecated APIs in your code. */
+        CORRADE_DEPRECATED("use data() or begin() instead")
+        #endif
+        operator T*() & { return _data; }
 
-        /** @overload */
-        /*implicit*/ operator const T*() const & { return _data; }
+        /**
+         * @brief Conversion to array type
+         * @m_deprecated_since_latest Use @ref data() or @ref begin() instead,
+         *      which conveys the intent clearer than an implicit pointer
+         *      conversion.
+         */
+        /*implicit*/
+        #ifndef CORRADE_MSVC_COMPATIBILITY /* see above */
+        CORRADE_DEPRECATED("use data() or begin() instead")
+        #endif
+        operator const T*() const & { return _data; }
+        #endif
 
         /** @brief Array data */
         T* data() { return _data; }
@@ -623,7 +696,7 @@ class Array {
          * @brief First element
          *
          * Expects there is at least one element.
-         * @see @ref begin(), @ref operator[]()
+         * @see @ref isEmpty(), @ref begin(), @ref operator[]()
          */
         T& front();
         const T& front() const; /**< @overload */
@@ -632,7 +705,7 @@ class Array {
          * @brief Last element
          *
          * Expects there is at least one element.
-         * @see @ref end(), @ref operator[]()
+         * @see @ref isEmpty(), @ref end(), @ref operator[]()
          */
         T& back();
         const T& back() const; /**< @overload */

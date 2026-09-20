@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -67,12 +67,6 @@ StringIterable::StringIterable(const StridedArrayView1D<const char* const> view,
 
 StringIterable::StringIterable(const std::initializer_list<StringView> view) noexcept: StringIterable{Containers::arrayView(view)} {}
 
-StringView StringIterable::operator[](const std::size_t i) const {
-    CORRADE_DEBUG_ASSERT(i < _size, "Containers::StringIterable::operator[](): index" << i << "out of range for" << _size << "elements", _accessor(_data, _context, _stride, 0));
-
-    return _accessor(static_cast<const char*>(_data) + i*_stride, _context, _stride, i);
-}
-
 StringView StringIterable::front() const {
     CORRADE_DEBUG_ASSERT(_size, "Containers::StringIterable::front(): view is empty", _accessor(_data, _context, _stride, 0));
 
@@ -83,6 +77,12 @@ StringView StringIterable::back() const {
     CORRADE_DEBUG_ASSERT(_size, "Containers::StringIterable::back(): view is empty", _accessor(_data, _context, _stride, 0));
 
     return _accessor(static_cast<const char*>(_data) + (_size - 1)*_stride, _context, _stride, _size - 1);
+}
+
+StringView StringIterable::operator[](const std::size_t i) const {
+    CORRADE_DEBUG_ASSERT(i < _size, "Containers::StringIterable::operator[](): index" << i << "out of range for" << _size << "elements", _accessor(_data, _context, _stride, 0));
+
+    return _accessor(static_cast<const char*>(_data) + i*_stride, _context, _stride, i);
 }
 
 StringView StringIterableIterator::operator*() const {

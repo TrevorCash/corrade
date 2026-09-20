@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -354,7 +354,7 @@ a high-level overview.
 -   @ref Containers::ArrayView::data() on non-const data now properly returns
     non-const pointer
 -   Worked around function template merging on MSVC, which caused different
-    signals being merged into one in @ref Interconnect library
+    signals being merged into one in @cpp Interconnect @ce library
 -   Added a workaround to `interface` macro defined by `windows.h` that broke
     @ref PluginManager headers
 -   Calling @ref CORRADE_EXPECT_FAIL() more than once in a single block caused
@@ -416,7 +416,7 @@ a high-level overview.
 
 @subsection corrade-changelog-2018-02-documentation Documentation
 
--   New documentation theme powered by [m.css](http://mcss.mosra.cz) and
+-   New documentation theme powered by [m.css](https://mcss.mosra.cz) and
     related massive updates of *everything*
 -   Various updates and clarifications to the @ref corrade-coding-style page
 -   All example code is put into public domain (or UNLICENSE) to free you from
@@ -546,8 +546,9 @@ No API was deprecated in this release.
 @subsection corrade-changelog-2014-06-compatibility Potential compatibility breakages, removed APIs
 
 -   All functionality deprecated in @ref corrade-changelog-2013-10-deprecated "2013.10"
-    has been removed. In particular the deprecated @cpp Interconnect::Emitter::connect() @ce
-    was removed, use @ref Interconnect::connect() instead.
+    has been removed. In particular the deprecated
+    @cpp Interconnect::Emitter::connect() @ce was removed, use
+    @cpp Interconnect::connect() @ce instead.
 
 @section corrade-changelog-2014-01 2014.01
 
@@ -570,7 +571,7 @@ No dependency changes in this release.
     function for easier explicit data access and also disallowing pointer
     conversion of rvalue Array as it would result in access to deleted memory
     (GCC 4.8.1/Clang only).
--   Improved state change signals in @ref Interconnect::StateMachine
+-   Improved state change signals in @cpp Interconnect::StateMachine @ce
 -   Support for multiple template arguments in @ref CORRADE_COMPARE_AS()
     macro in @ref TestSuite library.
 -   @ref Utility::String::join() and @ref Utility::String::joinWithoutEmptyParts()
@@ -659,10 +660,10 @@ No dependency changes in this release.
 
 -   macOS port (thanks to David Lin, see [mosra/corrade#4](https://github.com/mosra/corrade/pull/4))
 -   Fixed and updated Emscripten (HTML5) port
--   @ref Interconnect library can now connect signals to non-member functions
-    and C++11 lambdas. See @ref Interconnect::connect() for more information.
--   Added simple @ref Interconnect::StateMachine "StateMachine"
-    implementation into @ref Interconnect library.
+-   @cpp Interconnect @ce library can now connect signals to non-member
+    functions and C++11 lambdas. See @cpp Interconnect::connect() @ce for more
+    information.
+-   Added simple @cpp Interconnect::StateMachine @ce implementation
 
 @subsection corrade-changelog-2013-10-changes Changes
 
@@ -691,7 +692,7 @@ No dependency changes in this release.
 @subsection corrade-changelog-2013-10-deprecated Deprecated APIs
 
 -   @cpp Interconnect::Emitter::connect() @ce is deprecated, use
-    @ref Interconnect::connect() instead.
+    @cpp Interconnect::connect() @ce instead.
 
 @subsection corrade-changelog-2013-10-compatibility Potential compatibility breakages, removed APIs
 

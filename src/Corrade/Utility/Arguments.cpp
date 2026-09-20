@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
     Copyright © 2020 Pablo Escobar <mail@rvrs.in>
     Copyright © 2023 barracuda156 <vital.had@gmail.com>
@@ -32,6 +32,7 @@
 #include <cstring>
 #include <iomanip>
 #include <sstream>
+#include <vector>
 
 #include "Corrade/Containers/GrowableArray.h"
 #include "Corrade/Utility/Assert.h"
@@ -368,7 +369,8 @@ Arguments& Arguments::addBooleanOption(const char shortKey, std::string key) {
 
 namespace {
     inline bool keyHasPrefix(const std::string& key, const std::string& prefix) {
-        if(key.size() < prefix.size()) return false;
+        if(key.size() < prefix.size())
+            return false;
         return std::equal(prefix.begin(), prefix.end(), key.begin());
     }
 }
@@ -503,7 +505,8 @@ bool Arguments::tryParse(const int argc, const char* const* const argv) {
     CORRADE_INTERNAL_ASSERT(!argv == !argc);
 
     /* Save command name */
-    if(_command.empty() && argv && argc >= 1) _command = argv[0];
+    if(_command.empty() && argv && argc >= 1)
+        _command = argv[0];
 
     /* Clear previously parsed values */
     for(const Entry& entry: _entries) {
@@ -522,7 +525,8 @@ bool Arguments::tryParse(const int argc, const char* const* const argv) {
     /* Get options from environment */
     #ifndef CORRADE_TARGET_WINDOWS_RT
     for(const Entry& entry: _entries) {
-        if(entry.environment.empty()) continue;
+        if(entry.environment.empty())
+            continue;
 
         /* UTF-8 handling on sane platforms */
         #ifndef CORRADE_TARGET_WINDOWS
@@ -535,15 +539,17 @@ bool Arguments::tryParse(const int argc, const char* const* const argv) {
         #endif
 
         #ifndef CORRADE_TARGET_EMSCRIPTEN
-        if(!env) continue;
+        if(!env)
         #else
-        if(!env && !systemEnv) continue;
+        if(!env && !systemEnv)
         #endif
+            continue;
 
         /* Mess with UTF-16 on Windows */
         #else
         const wchar_t* const wenv = _wgetenv(widen(entry.environment).data());
-        if(!wenv) continue;
+        if(!wenv)
+            continue;
         std::string env{narrow(wenv)};
         #endif
 
@@ -579,7 +585,7 @@ bool Arguments::tryParse(const int argc, const char* const* const argv) {
     bool optionsAllowed = true;
     std::size_t shortOptionPackOffset = 0;
     std::size_t valueOffset = 0;
-    Containers::Array<bool> parsedArguments{_entries.size()};
+    Containers::Array<bool> parsedArguments{ValueInit, _entries.size()};
     Containers::Array<const char*> argumentValues;
 
     for(int i = 1; i < argc; ++i) {
@@ -619,10 +625,12 @@ bool Arguments::tryParse(const int argc, const char* const* const argv) {
             if(argv[i][1] != '-') {
                 /* Ignore if this is the prefixed version (these can be
                    anything, including values of long options) */
-                if(!_prefix.empty()) continue;
+                if(!_prefix.empty())
+                    continue;
 
                 /* Start a short option pack, if not already */
-                if(!shortOptionPackOffset) shortOptionPackOffset = 1;
+                if(!shortOptionPackOffset)
+                    shortOptionPackOffset = 1;
 
                 const char key = argv[i][shortOptionPackOffset];
                 if(!verifyKey(key)) {
@@ -682,7 +690,8 @@ bool Arguments::tryParse(const int argc, const char* const* const argv) {
                    version. */
                 bool ignore = false;
                 for(const std::pair<std::string, std::string>& prefix: _skippedPrefixes) {
-                    if(!keyHasPrefix(key, prefix.first)) continue;
+                    if(!keyHasPrefix(key, prefix.first))
+                        continue;
 
                     /* Ignore the option and also its value, unless the option
                        contains an equals sign (in which case the value is a
@@ -693,7 +702,8 @@ bool Arguments::tryParse(const int argc, const char* const* const argv) {
                         ++i;
                     break;
                 }
-                if(ignore) continue;
+                if(ignore)
+                    continue;
 
                 if(!verifyKey(key)) {
                     if(_parseErrorCallback(*this, ParseError::InvalidArgument, key))
@@ -802,7 +812,8 @@ bool Arguments::tryParse(const int argc, const char* const* const argv) {
         /* Argument */
         } else {
             /* Ignore if this is the prefixed version */
-            if(!_prefix.empty()) continue;
+            if(!_prefix.empty())
+                continue;
 
             /* Append to the argument array, defer assigning them to the
                correct positional arguments to later as that makes array
@@ -869,7 +880,8 @@ bool Arguments::tryParse(const int argc, const char* const* const argv) {
             } else {
                 CORRADE_INTERNAL_ASSERT(e->type == Type::ArrayArgument);
                 arrayAppend(_arrayValues[e->id], InPlaceInit, argumentValue);
-                if(!--arrayArgumentCount) ++e;
+                if(!--arrayArgumentCount)
+                    ++e;
             }
         }
     }
@@ -948,7 +960,8 @@ std::string Arguments::usage() const {
 
     /* Separator between named arguments (options) and unnamed arguments. Help
        option is always present. */
-    if(hasArguments) out << " [--]";
+    if(hasArguments)
+        out << " [--]";
 
     /* Print all arguments second */
     for(std::size_t i = 0; i != _entries.size(); ++i) {
@@ -961,7 +974,8 @@ std::string Arguments::usage() const {
 
         /* Final optional argument */
         CORRADE_INTERNAL_ASSERT(_entries[0].type == Type::BooleanOption);
-        if(_finalOptionalArgument == i) out << '[';
+        if(_finalOptionalArgument == i)
+            out << '[';
 
         out << entry.helpKey;
 
@@ -973,7 +987,8 @@ std::string Arguments::usage() const {
 
     /* Print ellipsis for main application arguments, if this is an prefixed
        version */
-    if(!_prefix.empty()) out << " ...";
+    if(!_prefix.empty())
+        out << " ...";
 
     out << '\n';
 
@@ -1018,7 +1033,8 @@ std::string Arguments::help() const {
         std::size_t currentKeyColumnWidth = entry.helpKey.size();
         if(entry.type != Type::Argument) {
             currentKeyColumnWidth += 2;
-            if(entry.shortKey) currentKeyColumnWidth += 4;
+            if(entry.shortKey)
+                currentKeyColumnWidth += 4;
         }
 
         keyColumnWidth = Utility::max(currentKeyColumnWidth, keyColumnWidth);
@@ -1051,14 +1067,16 @@ std::string Arguments::help() const {
         out << "  " << std::left << std::setw(keyColumnWidth) << entry.helpKey << "  ";
 
         /* Help text */
-        if(!entry.help.empty()) out << entry.help << '\n';
+        if(!entry.help.empty())
+            out << entry.help << '\n';
 
         /* Default value, put it on new indented line (two spaces from the
            left and one from the right additionally to key column width), if
            help text is also present */
         if(!entry.defaultValue.empty()) {
             CORRADE_INTERNAL_ASSERT(_finalOptionalArgument == i);
-            if(!entry.help.empty()) out << std::string(keyColumnWidth + 4, ' ');
+            if(!entry.help.empty())
+                out << std::string(keyColumnWidth + 4, ' ');
             out << "(default: " << entry.defaultValue << ")\n";
         }
     }
@@ -1081,14 +1099,17 @@ std::string Arguments::help() const {
         out << "--" << std::left << std::setw(keyColumnWidth - (entry.shortKey ? 6 : 2)) << entry.helpKey << "  ";
 
         /* Help text */
-        if(!entry.help.empty()) out << entry.help << '\n';
+        if(!entry.help.empty())
+            out << entry.help << '\n';
 
         /* Value taken from environment */
         #ifndef CORRADE_TARGET_WINDOWS_RT
         if(!entry.environment.empty()) {
-            if(!entry.help.empty()) out << std::string(keyColumnWidth + 4, ' ');
+            if(!entry.help.empty())
+                out << std::string(keyColumnWidth + 4, ' ');
             out << "(environment: " << entry.environment;
-            if(entry.type == Type::BooleanOption) out << "=ON|OFF";
+            if(entry.type == Type::BooleanOption)
+                out << "=ON|OFF";
             out << ")\n";
         }
         #endif
@@ -1097,7 +1118,8 @@ std::string Arguments::help() const {
            left and one from the right additionally to key column width), if
            help text is also present */
         if(!entry.defaultValue.empty()) {
-            if(!entry.help.empty()) out << std::string(keyColumnWidth + 4, ' ');
+            if(!entry.help.empty())
+                out << std::string(keyColumnWidth + 4, ' ');
             out << "(default: " << entry.defaultValue << ")\n";
         }
     }
@@ -1105,7 +1127,8 @@ std::string Arguments::help() const {
     /* Print references to skipped prefies last */
     for(const std::pair<std::string, std::string>& prefix: _skippedPrefixes) {
         out << "  --" << std::left << std::setw(keyColumnWidth) << prefix.first + "...  ";
-        if(!prefix.second.empty()) out << prefix.second << '\n' << std::string(keyColumnWidth + 4, ' ');
+        if(!prefix.second.empty())
+            out << prefix.second << '\n' << std::string(keyColumnWidth + 4, ' ');
         out << "(see --" << prefix.first << "help for details)\n";
     }
 
@@ -1162,7 +1185,8 @@ bool Arguments::isSet(const std::string& key) const {
 
 bool Arguments::skippedPrefix(const std::string& key) const {
     for(const std::pair<std::string, std::string>& prefix: _skippedPrefixes)
-        if(keyHasPrefix(key, prefix.first)) return true;
+        if(keyHasPrefix(key, prefix.first))
+            return true;
 
     return false;
 }
@@ -1180,20 +1204,20 @@ bool Arguments::verifyKey(char shortKey) const {
 }
 
 auto Arguments::find(const std::string& key) const -> const Entry* {
-    for(const Entry& e: _entries)
-        if(e.key == key) return &e;
+    for(const Entry& e: _entries) if(e.key == key)
+        return &e;
     return nullptr;
 }
 
 auto Arguments::find(const std::string& key) -> Entry* {
-    for(Entry& e: _entries)
-        if(e.key == key) return &e;
+    for(Entry& e: _entries) if(e.key == key)
+        return &e;
     return nullptr;
 }
 
 auto Arguments::find(const char shortKey) const -> const Entry* {
-    for(const Entry& e: _entries)
-        if(e.shortKey == shortKey) return &e;
+    for(const Entry& e: _entries) if(e.shortKey == shortKey)
+        return &e;
     return nullptr;
 }
 

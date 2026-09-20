@@ -1,8 +1,10 @@
+#ifndef Corrade_Utility_Test_AssertTestOverrides_h
+#define Corrade_Utility_Test_AssertTestOverrides_h
 /*
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -24,37 +26,23 @@
     DEALINGS IN THE SOFTWARE.
 */
 
-#include "Connection.h"
+#include <cstdlib>
+#include <Corrade/Utility/Debug.h>
 
-#include <utility>
+/* This file is included by passing -DCORRADE_ASSERT_INCLUDE to
+   UtilityAssertOverridesTest on command line, and also to
+   UtilityAssertOverridesTestFailAssert on Emscripten and Android. The result
+   should be that every assertion is prefixed with "Here comes an assertion:",
+   and a line saying "ABORTING." right before it aborts. */
 
-#include "Corrade/Interconnect/Emitter.h"
-#include "Corrade/Utility/Assert.h"
-
-namespace Corrade { namespace Interconnect {
-
-Connection::Connection(
-    #ifdef CORRADE_BUILD_DEPRECATED
-    Emitter& emitter,
-    #endif
-    Implementation::SignalData signal, Implementation::ConnectionData& data):
-    #ifdef CORRADE_BUILD_DEPRECATED
-    _emitter{emitter},
-    #endif
-    _signal{signal}, _data{&data} {}
-
-#ifdef CORRADE_BUILD_DEPRECATED
-/* LCOV_EXCL_START */
-bool Connection::isConnected() const {
-    Utility::Warning{} << "Interconnect::Emitter::isConnected(): this function is dangerous, use Emitter::isConnected() instead";
-    return _emitter->isConnected(*this);
+[[noreturn]] inline void abortLoudly() {
+    Corrade::Utility::Error{} << "ABORTING.";
+    std::abort();
 }
 
-void Connection::disconnect() {
-    Utility::Warning{} << "Interconnect::Connection::disconnect(): this function is dangerous, use Interconnect::disconnect() instead";
-    Interconnect::disconnect(_emitter, *this);
-}
-/* LCOV_EXCL_STOP */
+#define CORRADE_ASSERT_ABORT() abortLoudly()
+#define CORRADE_ASSERT_MESSAGE_ABORT(...)                                   \
+    Corrade::Utility::Error{Corrade::Utility::Error::defaultOutput()} << "Here comes an assertion:" << __VA_ARGS__; \
+    CORRADE_ASSERT_ABORT();
+
 #endif
-
-}}

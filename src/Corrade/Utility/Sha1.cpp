@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
     Copyright © 2019, 2022 Jonathan Hale <squareys@googlemail.com>
 
@@ -66,7 +66,8 @@ Sha1& Sha1::operator<<(Containers::ArrayView<const char> data) {
         if(data.size() + _bufferSize < 64) {
             /* Apparently memcpy() can't be called with null pointers, even if
                size is zero. I call that bullying. */
-            if(data.size()) std::memcpy(_buffer + _bufferSize, data.data(), data.size());
+            if(data.size())
+                std::memcpy(_buffer + _bufferSize, data.data(), data.size());
             _bufferSize += data.size();
             _dataSize += data.size();
             return *this;

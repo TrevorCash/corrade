@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -60,7 +60,7 @@
 
 /* First two is GCC/Clang for 32/64 bit, second two is MSVC 32/64bit. MSVC
    doesn't have AArch64 support in the compiler yet, though there are some
-   signs of it in headers (http://stackoverflow.com/a/37251625/6108877). */
+   signs of it in headers (https://stackoverflow.com/a/37251625). */
 #elif defined(__arm__) || defined(__aarch64__) || defined(_M_ARM) || defined(_M_ARM64)
 #define CORRADE_TARGET_ARM
 
@@ -113,16 +113,40 @@
    https://github.com/gcc-mirror/gcc/commit/19665740d336d4ee7d0cf92b5b0643fa1d7da14a
    https://en.cppreference.com/w/cpp/header/ciso646 */
 /* <ciso646> is removed in C++20 and replaced by <version>. As of August 2023
-   only MSVC 2022 warns that it's removed (which is why <version> is used
-   here), neither libc++ nor libstdc++ are at such level of annoyance yet.
+   MSVC 2022 warns that it's removed when using C++20, libc++ version 19 so far
+   doesn't warn. Unfortunately libstdc++ as of version 15 warns already when
+   using C++17, which is extremely annoying, because I can no longer expect
+   that all C++17-enabled compilers have <ciso646> that works without warnings
+   and all C++20-enabled compilers have <version> -- and *assuming* that all
+   C++17-enabled compilers have <version> isn't going to work, because one can
+   for example use a newer Clang with an older libstdc++ that doesn't have
+   <version> yet.
 
-   Note that the check for CORRADE_CXX_STANDARD may theoretically not be enough
-   for certain combinations of Clang + libstdc++ where libstdc++ doesn't have
-   <version> yet but Clang supports C++20 already. Didn't come across any such
-   case in practice yet, but if it happens this may need an additional
-   __has_include guard. */
-#if CORRADE_CXX_STANDARD >= 202002
-#include <version>
+   I also cannot make an exception for, say, _GLIBCXX_RELEASE >= 15 because I
+   kinda need to include <ciso646> or <version> to get to the value of this
+   macro, turning this into a stupid chicken-or-egg problem. Why the fuck did
+   you have to *remove* the old header in the first place, just three years
+   after it was marked deprecated, and, secondly, why THE FUCK it has to warn
+   now, giving the codebase no headroom at all to paper over toolchain version
+   differences?? Not every project is always on the latest GCC, for fucks sake.
+
+   The only way to do this semi-sanely is thus first checking if __has_include
+   is implemented by the compiler (because, guess what, it's *also* new in
+   C++17, thus it may happen that <version> is there but __has_include not yet
+   or vice versa, or any other combination, and __has_include is made in a way
+   that its mere presence in a preprocessor expression is a syntax error if not
+   implemented by the compiler), and then if it is, and <version> is there, and
+   C++17 is used, include <version>, otherwise <ciso646>. Truly a design
+   marvel, congratulations everyone involved, needing three paragraphs of
+   explanatory comments for a basic STL version check that should have been
+   just a single #include line if the involved parties just paused and thought
+   for a moment. */
+#if CORRADE_CXX_STANDARD >= 201703 && defined(__has_include)
+    #if __has_include(<version>)
+    #include <version>
+    #else
+    #include <ciso646>
+    #endif
 #else
 #include <ciso646>
 #endif
@@ -203,6 +227,39 @@
    temporary breakages until projects such as magnum-plugins update. */
 #if defined(CORRADE_BUILD_DEPRECATED) && defined(CORRADE_TARGET_BIG_ENDIAN)
 #define CORRADE_BIG_ENDIAN
+#endif
+
+/* Emscripten version detection crap that shouldn't be needed at all but here
+   we are. The __EMSCRIPTEN_major__ etc macros used to be passed implicitly,
+   version 3.1.4 moved them to a version header and version 3.1.23 dropped the
+   backwards compatibility. Furthermore, in version 5.0.1 the macros were
+   renamed to uppercase, with the old variants now producing deprecation
+   warnings on every use, even inside #ifdef, which makes this whole thing even
+   more shitty than it used to be. To avoid extreme headaches in all places
+   that need to check for Emscripten version, the version header is included
+   implicitly (if it exists) and the uppercase macros are defined on all
+   versions.
+    https://github.com/emscripten-core/emscripten/commit/f99af02045357d3d8b12e63793cef36dfde4530a
+    https://github.com/emscripten-core/emscripten/commit/f76ddc702e4956aeedb658c49790cc352f892e4c
+    https://github.com/emscripten-core/emscripten/commit/4cce5e9a4a245713df7fc5bf4ad1e6d7463cbf4b */
+#ifdef CORRADE_TARGET_EMSCRIPTEN
+/* We cannot do `#ifndef __EMSCRIPTEN_major__` as that produces a deprecation
+   warning, so instead attempt to include the version header. If it isn't there
+   (or if __has_include isn't even a thing), we have an old Emscripten which
+   defines the lowercase macros implicitly. If it's there and the uppercase
+   macros are defined, we're done. If the uppercase macros are not defined,
+   we're on an older version and can alias them to the lowercase without
+   triggering a deprecation warning. */
+#ifdef __has_include
+#if __has_include(<emscripten/version.h>)
+#include <emscripten/version.h>
+#endif
+#endif
+#ifndef __EMSCRIPTEN_MAJOR__
+#define __EMSCRIPTEN_MAJOR__ __EMSCRIPTEN_major__
+#define __EMSCRIPTEN_MINOR__ __EMSCRIPTEN_minor__
+#define __EMSCRIPTEN_TINY__ __EMSCRIPTEN_tiny__
+#endif
 #endif
 
 /* Compile-time CPU feature detection */
@@ -363,7 +420,8 @@
 #endif
 #endif
 
-/* Undocumented, checked via `echo | em++ -x c++ -dM -E - -msimd128`.
+/* __wasm_simd128__ is undocumented, discovered via the following command:
+    echo | em++ -x c++ -dM -E - -msimd128
    Restricting to the finalized SIMD variant, which is since Clang 13:
     https://github.com/llvm/llvm-project/commit/502f54049d17f5a107f833596fb2c31297a99773
    Emscripten 2.0.13 sets Clang 13 as the minimum, however it doesn't imply
@@ -372,17 +430,7 @@
    well :(
     https://github.com/emscripten-core/emscripten/commit/deab7783df407b260f46352ffad2a77ca8fb0a4c */
 #elif defined(CORRADE_TARGET_WASM)
-/* The __EMSCRIPTEN_major__ etc macros used to be passed implicitly, version
-   3.1.4 moved them to a version header and version 3.1.23 dropped the
-   backwards compatibility. To work consistently on all versions, including the
-   header only if the version macros aren't present.
-   https://github.com/emscripten-core/emscripten/commit/f99af02045357d3d8b12e63793cef36dfde4530a
-   https://github.com/emscripten-core/emscripten/commit/f76ddc702e4956aeedb658c49790cc352f892e4c */
-/** @todo remove the include once we no longer need to check for 2.0.18 */
-#if defined(CORRADE_TARGET_EMSCRIPTEN) && !defined(__EMSCRIPTEN_major__)
-#include <emscripten/version.h>
-#endif
-#if defined(__wasm_simd128__) && __clang_major__ >= 13 && __EMSCRIPTEN_major__*10000 + __EMSCRIPTEN_minor__*100 + __EMSCRIPTEN_tiny__ >= 20018
+#if defined(__wasm_simd128__) && __clang_major__ >= 13 && __EMSCRIPTEN_MAJOR__*10000 + __EMSCRIPTEN_MINOR__*100 + __EMSCRIPTEN_TINY__ >= 20018
 #define CORRADE_TARGET_SIMD128
 #endif
 #endif

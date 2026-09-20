@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -28,8 +28,10 @@
 #include <cstring> /* std::memchr */
 #include <locale> /* std::locale::classic() */
 
+#include "Corrade/Containers/Array.h"
 #include "Corrade/Containers/Optional.h"
 #include "Corrade/Containers/StringView.h"
+#include "Corrade/Containers/StringStl.h" /* for std::istringstream::str() */
 #include "Corrade/TestSuite/Tester.h"
 #include "Corrade/TestSuite/Compare/Numeric.h"
 #include "Corrade/Utility/Format.h"
@@ -39,10 +41,33 @@
 #include "Corrade/Utility/Test/cpuVariantHelpers.h"
 #include "Corrade/Utility/Test/StringTest.h"
 
-/* On GCC 4.8 has to be included after StringTest.h which includes the AVX
-   intrinsics headers, otherwise __m256i and other types don't get defined for
-   some reason */
+/* On GCC 4.8 these have to be included after StringTest.h which includes the
+   AVX intrinsics headers, otherwise __m256i and other types don't get defined
+   for some reason */
 #include <algorithm> /* std::transform(), std::replace() */
+#include <random>
+
+/* That a compiler advertises C++17 support doesn't necessarily mean it uses a
+   STL implementation that implements all its features (such as using a new
+   Clang with an old libstdc++). So check for presence of the header as
+   well. */
+#ifdef CORRADE_TARGET_CXX17
+#ifdef __has_include
+#if __has_include(<charconv>)
+#include <charconv> /* std::from_chars() */
+#define CAN_USE_STL_FROM_CHARS
+/* The floating-point std::from_chars() variants are available only since
+   libstdc++ 11.1 and libc++ 20. With the MSVC STL it's available since MSVC
+   2017, which is also the first version that advertises C++17 support, so
+   there it doesn't need any special handling.
+    https://github.com/gcc-mirror/gcc/commit/932fbc868ad429167a3d4d5625aa9d6dc0b4506b
+    https://github.com/llvm/llvm-project/commit/6c4267fb1779bc5550bb413f33250f9365acfbc6 */
+#if (defined(CORRADE_TARGET_LIBSTDCXX) && _GLIBCXX_RELEASE >= 11) || (defined(CORRADE_TARGET_LIBCXX) && _LIBCPP_VERSION >= 200000) || defined(CORRADE_TARGET_DINKUMWARE)
+#define CAN_USE_STL_FROM_CHARS_FLOAT
+#endif
+#endif
+#endif
+#endif
 
 #include "configure.h"
 
@@ -95,6 +120,32 @@ struct StringBenchmark: TestSuite::Tester {
     void replaceAllInPlaceCharacterCommonSmall();
     void replaceAllInPlaceCharacterCommonSmallStl();
 
+    /* Benchmarks just the unsigned variants, as signed is just a trivial
+       (and thus constant-time) transformation on top */
+    template<Containers::Array<Containers::String> StringBenchmark::*numbers> void parseDecimal();
+    template<Containers::Array<Containers::String> StringBenchmark::*numbers> void parseDecimalNaive();
+    template<Containers::Array<Containers::String> StringBenchmark::*numbers> void parseDecimalStl();
+    template<Containers::Array<Containers::String> StringBenchmark::*numbers> void parseDecimalStlNonNullTerminated();
+    template<Containers::Array<Containers::String> StringBenchmark::*numbers> void parseDecimalStlStream();
+    #ifdef CAN_USE_STL_FROM_CHARS
+    template<Containers::Array<Containers::String> StringBenchmark::*numbers> void parseDecimalStlFromChars();
+    #endif
+    template<Containers::Array<Containers::String> StringBenchmark::*numbers> void parseHexadecimal();
+    template<Containers::Array<Containers::String> StringBenchmark::*numbers> void parseHexadecimalNaive();
+    template<Containers::Array<Containers::String> StringBenchmark::*numbers> void parseHexadecimalStl();
+    template<Containers::Array<Containers::String> StringBenchmark::*numbers> void parseHexadecimalStlNonNullTerminated();
+    template<Containers::Array<Containers::String> StringBenchmark::*numbers> void parseHexadecimalStlStream();
+    #ifdef CAN_USE_STL_FROM_CHARS
+    template<Containers::Array<Containers::String> StringBenchmark::*numbers> void parseHexadecimalStlFromChars();
+    #endif
+    template<class T> void parseFloat();
+    template<class T, T(*parse)(const char*, char**)> void parseFloatStl();
+    template<class T, T(*parse)(const char*, char**)> void parseFloatStlNonNullTerminated();
+    template<class T> void parseFloatStlStream();
+    #ifdef CAN_USE_STL_FROM_CHARS_FLOAT
+    template<class T> void parseFloatStlFromChars();
+    #endif
+
     private:
         Containers::Optional<Containers::String> _text;
         #ifdef CORRADE_UTILITY_FORCE_CPU_POINTER_DISPATCH
@@ -103,6 +154,13 @@ struct StringBenchmark: TestSuite::Tester {
         decltype(String::Implementation::uppercaseInPlace) _uppercaseInPlaceImplementation;
         decltype(String::Implementation::replaceAllInPlaceCharacter) _replaceAllInPlaceCharacterImplementation;
         #endif
+
+        Containers::Array<Containers::String> _numbers,
+            _numbersLeadingZeros,
+            _numbersHex,
+            _numbersHexLeadingZeros;
+        std::uint64_t _numbersSum;
+        double _numbersSumFloat;
 };
 
 using namespace Containers::Literals;
@@ -446,7 +504,93 @@ StringBenchmark::StringBenchmark() {
         &StringBenchmark::replaceAllInPlaceCharacterMemchrLoop<'\n'>,
         &StringBenchmark::replaceAllInPlaceCharacterStl<'\n'>}, 20);
 
+    addBenchmarks<StringBenchmark>({
+        &StringBenchmark::parseDecimal<&StringBenchmark::_numbers>,
+        &StringBenchmark::parseDecimalNaive<&StringBenchmark::_numbers>,
+        &StringBenchmark::parseDecimalStl<&StringBenchmark::_numbers>,
+        &StringBenchmark::parseDecimalStlNonNullTerminated<&StringBenchmark::_numbers>,
+        &StringBenchmark::parseDecimalStlStream<&StringBenchmark::_numbers>,
+        #ifdef CAN_USE_STL_FROM_CHARS
+        &StringBenchmark::parseDecimalStlFromChars<&StringBenchmark::_numbers>,
+        #endif
+
+        &StringBenchmark::parseDecimal<&StringBenchmark::_numbersLeadingZeros>,
+        &StringBenchmark::parseDecimalNaive<&StringBenchmark::_numbersLeadingZeros>,
+        &StringBenchmark::parseDecimalStl<&StringBenchmark::_numbersLeadingZeros>,
+        &StringBenchmark::parseDecimalStlNonNullTerminated<&StringBenchmark::_numbersLeadingZeros>,
+        &StringBenchmark::parseDecimalStlStream<&StringBenchmark::_numbersLeadingZeros>,
+        #ifdef CAN_USE_STL_FROM_CHARS
+        &StringBenchmark::parseDecimalStlFromChars<&StringBenchmark::_numbersLeadingZeros>,
+        #endif
+
+        &StringBenchmark::parseHexadecimal<&StringBenchmark::_numbersHex>,
+        &StringBenchmark::parseHexadecimalNaive<&StringBenchmark::_numbersHex>,
+        &StringBenchmark::parseHexadecimalStl<&StringBenchmark::_numbersHex>,
+        &StringBenchmark::parseHexadecimalStlNonNullTerminated<&StringBenchmark::_numbersHex>,
+        &StringBenchmark::parseHexadecimalStlStream<&StringBenchmark::_numbersHex>,
+        #ifdef CAN_USE_STL_FROM_CHARS
+        &StringBenchmark::parseHexadecimalStlFromChars<&StringBenchmark::_numbersHex>,
+        #endif
+
+        &StringBenchmark::parseHexadecimal<&StringBenchmark::_numbersHexLeadingZeros>,
+        &StringBenchmark::parseHexadecimalNaive<&StringBenchmark::_numbersHexLeadingZeros>,
+        &StringBenchmark::parseHexadecimalStl<&StringBenchmark::_numbersHexLeadingZeros>,
+        &StringBenchmark::parseHexadecimalStlNonNullTerminated<&StringBenchmark::_numbersHexLeadingZeros>,
+        &StringBenchmark::parseHexadecimalStlStream<&StringBenchmark::_numbersHexLeadingZeros>,
+        #ifdef CAN_USE_STL_FROM_CHARS
+        &StringBenchmark::parseHexadecimalStlFromChars<&StringBenchmark::_numbersHexLeadingZeros>,
+        #endif
+
+        &StringBenchmark::parseFloat<float>,
+        &StringBenchmark::parseFloatStl<float, std::strtof>,
+        &StringBenchmark::parseFloatStlNonNullTerminated<float, std::strtof>,
+        &StringBenchmark::parseFloatStlStream<float>,
+        #ifdef CAN_USE_STL_FROM_CHARS_FLOAT
+        &StringBenchmark::parseFloatStlFromChars<float>,
+        #endif
+
+        &StringBenchmark::parseFloat<double>,
+        &StringBenchmark::parseFloatStl<double, std::strtod>,
+        &StringBenchmark::parseFloatStlNonNullTerminated<double, std::strtod>,
+        &StringBenchmark::parseFloatStlStream<double>,
+        #ifdef CAN_USE_STL_FROM_CHARS_FLOAT
+        &StringBenchmark::parseFloatStlFromChars<double>,
+        #endif
+    }, 50);
+
     _text = Path::readString(Path::join(CONTAINERS_STRING_TEST_DIR, "lorem-ipsum.txt"));
+
+    /* A list with a bunch of 64-bit numbers */
+    {
+        std::random_device rd;
+        std::mt19937 gen{rd()};
+        /* Anything between a single zero and the full 64-bit value to verify
+           the general case including the constant overhead. Limiting the
+           distibution to e.g. {~std::uint64_t{}/100, ~std::uint64_t{}} would
+           put more emphasis on the actual number parsing and less on the
+           constant overhead. The leading zeros case is for checking if there's
+           any fast path for consuming these in the STL implementations like I
+           have in mine. */
+        std::uniform_int_distribution<std::uint64_t> distrib{0, ~std::uint64_t{}};
+        const std::size_t count = 1000;
+        _numbers = Containers::Array<Containers::String>{ValueInit, count};
+        _numbersLeadingZeros = Containers::Array<Containers::String>{ValueInit, count};
+        _numbersHex = Containers::Array<Containers::String>{ValueInit, count};
+        _numbersHexLeadingZeros = Containers::Array<Containers::String>{ValueInit, count};
+        _numbersSum = 0;
+        _numbersSumFloat = 0.0;
+        for(std::size_t i = 0; i != count; ++i) {
+            std::uint64_t value = distrib(gen);
+            _numbersSum += value;
+            _numbersSumFloat += value;
+            _numbers[i] = Utility::format("{}", value);
+            _numbersLeadingZeros[i] = Utility::format("{:.40}", value);
+            _numbersHex[i] = Utility::format("{:x}", value);
+            _numbersHexLeadingZeros[i] = Utility::format("{:.32x}", value);
+        }
+        CORRADE_INTERNAL_ASSERT(_numbersSum);
+        CORRADE_INTERNAL_ASSERT(!std::isinf(float(_numbersSumFloat)));
+    }
 }
 
 void StringBenchmark::captureImplementations() {
@@ -773,8 +917,8 @@ void StringBenchmark::lowercaseBranchless32() {
 /* This is the original implementation that used to be in
    String::lowercaseInPlace() */
 CORRADE_NEVER_INLINE void lowercaseInPlaceNaive(Containers::MutableStringView string) {
-    for(char& c: string)
-        if(c >= 'A' && c <= 'Z') c |= 0x20;
+    for(char& c: string) if(c >= 'A' && c <= 'Z')
+        c |= 0x20;
 }
 
 void StringBenchmark::lowercaseNaive() {
@@ -885,8 +1029,8 @@ void StringBenchmark::uppercaseBranchless32() {
 /* This is the original implementation that used to be in
    String::uppercaseInPlace() */
 CORRADE_NEVER_INLINE void uppercaseInPlaceNaive(Containers::MutableStringView string) {
-    for(char& c: string)
-        if(c >= 'a' && c <= 'z') c &= ~0x20;
+    for(char& c: string) if(c >= 'a' && c <= 'z')
+        c &= ~0x20;
 }
 
 void StringBenchmark::uppercaseNaive() {
@@ -1051,7 +1195,8 @@ template<char character> void StringBenchmark::replaceAllInPlaceCharacterNaive()
     std::size_t i = 0;
     CORRADE_BENCHMARK(CharacterRepeats) {
         for(char& j: string.sliceSize((i++)*_text->size(), _text->size()))
-            if(j == character) j = '_';
+            if(j == character)
+                j = '_';
     }
 
     CORRADE_VERIFY(!string.contains(character));
@@ -1152,6 +1297,284 @@ void StringBenchmark::replaceAllInPlaceCharacterCommonSmallStl() {
     CORRADE_VERIFY(!Containers::StringView{string}.contains(' '));
     CORRADE_VERIFY(Containers::StringView{string}.contains('_'));
 }
+
+template<Containers::Array<Containers::String> StringBenchmark::*numbers> void StringBenchmark::parseDecimal() {
+    if(numbers == &StringBenchmark::_numbersLeadingZeros)
+        setTestCaseDescription("leading zeros");
+
+    std::size_t i = 0;
+    std::uint64_t sum = 0;
+    CORRADE_BENCHMARK((this->*numbers).size()) {
+        std::uint64_t value{};
+        String::parseDecimal((this->*numbers)[i++], value);
+        sum += value;
+    }
+
+    CORRADE_COMPARE(sum, _numbersSum);
+}
+
+CORRADE_NEVER_INLINE std::uint64_t parseDecimalNaive(Containers::StringView string) {
+    std::uint64_t out = 0;
+    for(char i: string)
+        out = out*10 + i - '0';
+    return out;
+}
+
+template<Containers::Array<Containers::String> StringBenchmark::*numbers> void StringBenchmark::parseDecimalNaive() {
+    if(numbers == &StringBenchmark::_numbersLeadingZeros)
+        setTestCaseDescription("leading zeros");
+
+    std::size_t i = 0;
+    std::uint64_t sum = 0;
+    CORRADE_BENCHMARK((this->*numbers).size())
+        sum += Test::parseDecimalNaive((this->*numbers)[i++]);
+
+    CORRADE_COMPARE(sum, _numbersSum);
+}
+
+template<Containers::Array<Containers::String> StringBenchmark::*numbers> void StringBenchmark::parseDecimalStl() {
+    if(numbers == &StringBenchmark::_numbersLeadingZeros)
+        setTestCaseDescription("leading zeros");
+
+    std::size_t i = 0;
+    std::uint64_t sum = 0;
+    CORRADE_BENCHMARK((this->*numbers).size())
+        sum += std::strtoull((this->*numbers)[i++].data(), nullptr, 10);
+
+    CORRADE_COMPARE(sum, _numbersSum);
+}
+
+template<Containers::Array<Containers::String> StringBenchmark::*numbers> void StringBenchmark::parseDecimalStlNonNullTerminated() {
+    if(numbers == &StringBenchmark::_numbersLeadingZeros)
+        setTestCaseDescription("leading zeros");
+
+    std::size_t i = 0;
+    std::uint64_t sum = 0;
+    CORRADE_BENCHMARK((this->*numbers).size())
+        /* Does a copy compared to the above, in case of many leading zeros an
+           allocated copy */
+        sum += std::strtoull(Containers::String{(this->*numbers)[i++]}.data(), nullptr, 10);
+
+    CORRADE_COMPARE(sum, _numbersSum);
+}
+
+template<Containers::Array<Containers::String> StringBenchmark::*numbers> void StringBenchmark::parseDecimalStlStream() {
+    if(numbers == &StringBenchmark::_numbersLeadingZeros)
+        setTestCaseDescription("leading zeros");
+
+    std::size_t i = 0;
+    std::uint64_t sum = 0;
+    std::istringstream in;
+    CORRADE_BENCHMARK((this->*numbers).size()) {
+        /* Lol, calling str() doesn't clear the eofbit on this damn thing?! */
+        in.clear();
+        /* This uses the String -> std::string conversion instead of passing
+           .data() to avoid calling strlen() for each number */
+        in.str((this->*numbers)[i++]);
+        std::uint64_t value{};
+        in >> value;
+        sum += value;
+    }
+
+    CORRADE_COMPARE(sum, _numbersSum);
+}
+
+#ifdef CAN_USE_STL_FROM_CHARS
+template<Containers::Array<Containers::String> StringBenchmark::*numbers> void StringBenchmark::parseDecimalStlFromChars() {
+    if(numbers == &StringBenchmark::_numbersLeadingZeros)
+        setTestCaseDescription("leading zeros");
+
+    std::size_t i = 0;
+    std::uint64_t sum = 0;
+    CORRADE_BENCHMARK((this->*numbers).size()) {
+        const Containers::String& string = (this->*numbers)[i++];
+        std::uint64_t value{};
+        std::from_chars(string.begin(), string.end(), value, 10);
+        sum += value;
+    }
+
+    CORRADE_COMPARE(sum, _numbersSum);
+}
+#endif
+
+template<Containers::Array<Containers::String> StringBenchmark::*numbers> void StringBenchmark::parseHexadecimal() {
+    if(numbers == &StringBenchmark::_numbersHexLeadingZeros)
+        setTestCaseDescription("leading zeros");
+
+    std::size_t i = 0;
+    std::uint64_t sum = 0;
+    CORRADE_BENCHMARK((this->*numbers).size()) {
+        std::uint64_t value{};
+        String::parseHexadecimal((this->*numbers)[i++], value);
+        sum += value;
+    }
+
+    CORRADE_COMPARE(sum, _numbersSum);
+}
+
+CORRADE_NEVER_INLINE std::uint64_t parseHexadecimalNaive(Containers::StringView string) {
+    std::uint64_t out = 0;
+    for(char i: string) {
+        out <<= 4;
+        if(i >= '0' && i <= '9')
+            out += i - '0';
+        else if(i >= 'a' && i <= 'f')
+            out += i - 'a' + 10;
+        else CORRADE_INTERNAL_DEBUG_ASSERT_UNREACHABLE();
+    }
+    return out;
+}
+
+template<Containers::Array<Containers::String> StringBenchmark::*numbers> void StringBenchmark::parseHexadecimalNaive() {
+    if(numbers == &StringBenchmark::_numbersHexLeadingZeros)
+        setTestCaseDescription("leading zeros");
+
+    std::size_t i = 0;
+    std::uint64_t sum = 0;
+    CORRADE_BENCHMARK((this->*numbers).size())
+        sum += Test::parseHexadecimalNaive((this->*numbers)[i++]);
+
+    CORRADE_COMPARE(sum, _numbersSum);
+}
+
+template<Containers::Array<Containers::String> StringBenchmark::*numbers> void StringBenchmark::parseHexadecimalStl() {
+    if(numbers == &StringBenchmark::_numbersHexLeadingZeros)
+        setTestCaseDescription("leading zeros");
+
+    std::size_t i = 0;
+    std::uint64_t sum = 0;
+    CORRADE_BENCHMARK((this->*numbers).size())
+        sum += std::strtoull((this->*numbers)[i++].data(), nullptr, 16);
+
+    CORRADE_COMPARE(sum, _numbersSum);
+}
+
+template<Containers::Array<Containers::String> StringBenchmark::*numbers> void StringBenchmark::parseHexadecimalStlNonNullTerminated() {
+    if(numbers == &StringBenchmark::_numbersHexLeadingZeros)
+        setTestCaseDescription("leading zeros");
+
+    std::size_t i = 0;
+    std::uint64_t sum = 0;
+    CORRADE_BENCHMARK((this->*numbers).size())
+        /* Does a copy compared to the above, in case of many leading zeros an
+           allocated copy */
+        sum += std::strtoull(Containers::String{(this->*numbers)[i++]}.data(), nullptr, 16);
+
+    CORRADE_COMPARE(sum, _numbersSum);
+}
+
+template<Containers::Array<Containers::String> StringBenchmark::*numbers> void StringBenchmark::parseHexadecimalStlStream() {
+    if(numbers == &StringBenchmark::_numbersHexLeadingZeros)
+        setTestCaseDescription("leading zeros");
+
+    std::size_t i = 0;
+    std::uint64_t sum = 0;
+    std::istringstream in;
+    CORRADE_BENCHMARK((this->*numbers).size()) {
+        /* Lol, calling str() doesn't clear the eofbit on this damn thing?! */
+        in.clear();
+        /* This uses the String -> std::string conversion instead of passing
+           .data() to avoid calling strlen() for each number */
+        in.str((this->*numbers)[i++]);
+        std::uint64_t value{};
+        in >> std::hex >> value;
+        sum += value;
+    }
+
+    CORRADE_COMPARE(sum, _numbersSum);
+}
+
+#ifdef CAN_USE_STL_FROM_CHARS
+template<Containers::Array<Containers::String> StringBenchmark::*numbers> void StringBenchmark::parseHexadecimalStlFromChars() {
+    if(numbers == &StringBenchmark::_numbersHexLeadingZeros)
+        setTestCaseDescription("leading zeros");
+
+    std::size_t i = 0;
+    std::uint64_t sum = 0;
+    CORRADE_BENCHMARK((this->*numbers).size()) {
+        const Containers::String& string = (this->*numbers)[i++];
+        std::uint64_t value{};
+        std::from_chars(string.begin(), string.end(), value, 16);
+        sum += value;
+    }
+
+    CORRADE_COMPARE(sum, _numbersSum);
+}
+#endif
+
+template<class T> void StringBenchmark::parseFloat() {
+    setTestCaseTemplateName(std::is_same<T, float>::value ? "float" : "double");
+
+    std::size_t i = 0;
+    T sum = 0;
+    CORRADE_BENCHMARK(_numbers.size()) {
+        T value{};
+        String::parseFloat(_numbers[i++], value);
+        sum += value;
+    }
+
+    CORRADE_COMPARE(sum, T(_numbersSumFloat));
+}
+
+template<class T, T(*parse)(const char*, char**)> void StringBenchmark::parseFloatStl() {
+    setTestCaseTemplateName(std::is_same<T, float>::value ? "float" : "double");
+
+    std::size_t i = 0;
+    T sum = 0;
+    CORRADE_BENCHMARK(_numbers.size())
+        sum += parse(_numbers[i++].data(), nullptr);
+
+    CORRADE_COMPARE(sum, T(_numbersSumFloat));
+}
+
+template<class T, T(*parse)(const char*, char**)> void StringBenchmark::parseFloatStlNonNullTerminated() {
+    setTestCaseTemplateName(std::is_same<T, float>::value ? "float" : "double");
+
+    std::size_t i = 0;
+    T sum = 0;
+    CORRADE_BENCHMARK(_numbers.size())
+        /* Does a copy compared to the above, but likely fitting into SSO */
+        sum += parse(_numbers[i++].data(), nullptr);
+
+    CORRADE_COMPARE(sum, T(_numbersSumFloat));
+}
+
+template<class T> void StringBenchmark::parseFloatStlStream() {
+    setTestCaseTemplateName(std::is_same<T, float>::value ? "float" : "double");
+
+    std::size_t i = 0;
+    T sum = 0;
+    std::istringstream in;
+    CORRADE_BENCHMARK(_numbers.size()) {
+        /* Lol, calling str() doesn't clear the eofbit on this damn thing?! */
+        in.clear();
+        /* This uses the String -> std::string conversion instead of passing
+           .data() to avoid calling strlen() for each number */
+        in.str(_numbers[i++]);
+        T value{};
+        in >> value;
+        sum += value;
+    }
+
+    CORRADE_COMPARE(sum, T(_numbersSumFloat));
+}
+
+#ifdef CAN_USE_STL_FROM_CHARS_FLOAT
+template<class T> void StringBenchmark::parseFloatStlFromChars() {
+    setTestCaseTemplateName(std::is_same<T, float>::value ? "float" : "double");
+
+    std::size_t i = 0;
+    T sum = 0;
+    CORRADE_BENCHMARK(_numbers.size()) {
+        const Containers::String& string = _numbers[i++];
+        T value{};
+        std::from_chars(string.begin(), string.end(), value);
+        sum += value;
+    }
+
+    CORRADE_COMPARE(sum, T(_numbersSumFloat));
+}
+#endif
 
 }}}}
 

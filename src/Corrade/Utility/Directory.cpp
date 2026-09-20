@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
     Copyright © 2019, 2020 Jonathan Hale <squareys@googlemail.com>
 
@@ -66,11 +66,7 @@ std::string join(const std::string& path, const std::string& filename) {
 }
 
 std::string join(const std::initializer_list<std::string> paths) {
-    const auto pathsView = Containers::arrayView(paths);
-    Containers::Array<Containers::StringView> pathViews{paths.size()};
-    for(std::size_t i = 0; i != pathsView.size(); ++i)
-        pathViews[i] = pathsView[i];
-    return Path::join(pathViews);
+    return Path::join(Containers::arrayView(paths));
 }
 
 bool mkpath(const std::string& path) {

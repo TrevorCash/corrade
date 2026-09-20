@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -628,7 +628,8 @@ void IterableTest::iterator() {
     /* Verifying also that iterators of different views and iterators of
        different strides are not comparable */
     StridedArrayView1D<int> a{d, &d[0].value, 7, data.stride};
-    if(data.flipped) a = a.flipped<0>();
+    if(data.flipped)
+        a = a.flipped<0>();
     StridedArrayView1D<int> b;
 
     Iterable<int> ai = a;

@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
     Copyright © 2024 Will Usher <will@willusher.io>
 
@@ -621,7 +621,7 @@ template<unsigned dimensions, class T> class StridedArrayView {
          * @brief First element
          *
          * Expects there is at least one element.
-         * @see @ref begin(), @ref operator[](std::size_t) const
+         * @see @ref isEmpty(), @ref begin(), @ref operator[](std::size_t) const
          */
         ElementType front() const;
 
@@ -629,7 +629,7 @@ template<unsigned dimensions, class T> class StridedArrayView {
          * @brief Last element
          *
          * Expects there is at least one element.
-         * @see @ref end(), @ref operator[](std::size_t) const
+         * @see @ref isEmpty(), @ref end(), @ref operator[](std::size_t) const
          */
         ElementType back() const;
 
@@ -732,6 +732,9 @@ template<unsigned dimensions, class T> class StridedArrayView {
          *
          * @snippet Containers.cpp StridedArrayView-slice-member
          *
+         * For views with a @cpp nullptr @ce data pointer the resulting view
+         * is @cpp nullptr @ce as well, i.e. the member offset isn't added in
+         * that case. Otherwise it is always, even if the view is empty.
          * @see @ref StridedArrayView(ArrayView<ErasedType>, T*, const Containers::Size<dimensions>&, const Containers::Stride<dimensions>&)
          */
         #ifdef DOXYGEN_GENERATING_OUTPUT
@@ -752,7 +755,7 @@ template<unsigned dimensions, class T> class StridedArrayView {
             !std::is_member_function_pointer<U V::*>::value
             #endif
         , int>::type = 0> auto slice(U V::*member) const -> StridedArrayView<dimensions, typename std::conditional<std::is_const<T>::value, const U, U>::type> {
-            return StridedArrayView<dimensions, typename std::conditional<std::is_const<T>::value, const U, U>::type>{_size, _stride, &(static_cast<T*>(_data)->*member)};
+            return StridedArrayView<dimensions, typename std::conditional<std::is_const<T>::value, const U, U>::type>{_size, _stride, _data ? &(static_cast<T*>(_data)->*member) : nullptr};
         }
         #endif
 
@@ -766,7 +769,10 @@ template<unsigned dimensions, class T> class StridedArrayView {
          * @snippet Containers.cpp StridedArrayView-slice-member-function
          *
          * Expects the function to return a reference to the class data members
-         * (i.e., the returned offset being less than @cpp sizeof(T) @ce).
+         * (i.e., the returned offset being less than @cpp sizeof(T) @ce). For
+         * views with a @cpp nullptr @ce data pointer the resulting view is
+         * @cpp nullptr @ce as well, i.e. the member offset isn't added in that
+         * case. Otherwise it is always, even if the view is empty.
          *
          * @attention Note that in order to get the offset, the member function
          *      is internally executed on a zeroed-out piece of memory. Thus
@@ -1306,7 +1312,11 @@ template<unsigned dimensions> class StridedArrayView<dimensions, void> {
            StaticArrayViewConverter overload as we wouldn't be able to infer
            the size parameter. Since ArrayViewConverter is supposed to handle
            conversion from statically sized arrays as well, this is okay. */
-        template<class T, unsigned d = dimensions, class = typename std::enable_if<d == 1, decltype(Implementation::ErasedArrayViewConverter<typename std::decay<T&&>::type>::from(std::declval<T&&>()))>::type> constexpr /*implicit*/ StridedArrayView(T&& other) noexcept: StridedArrayView{Implementation::ErasedArrayViewConverter<typename std::decay<T&&>::type>::from(other)} {}
+        template<class T, class U = decltype(Implementation::ErasedArrayViewConverter<typename std::decay<T&&>::type>::from(std::declval<T&&>()))
+            #ifndef DOXYGEN_GENERATING_OUTPUT
+            , typename std::enable_if<dimensions == 1 && !std::is_const<typename U::Type>::value, int>::type = 0
+            #endif
+        > constexpr /*implicit*/ StridedArrayView(T&& other) noexcept: StridedArrayView{Implementation::ErasedArrayViewConverter<typename std::decay<T&&>::type>::from(other)} {}
 
         /** @brief Whether the array is non-empty */
         constexpr explicit operator bool() const { return _data; }
@@ -1798,7 +1808,7 @@ template<class T, class U = decltype(stridedArrayView(Implementation::ErasedArra
 @tparam U Type to cast to
 
 Size of the new array is the same as original. Expects that both types are
-[standard layout](http://en.cppreference.com/w/cpp/concept/StandardLayoutType)
+[standard layout](https://en.cppreference.com/w/cpp/named_req/StandardLayoutType.html)
 and @cpp sizeof(U) @ce is not larger than any @ref StridedArrayView::stride() "stride()"
 of the original array. Works with negative and zero strides as well, however
 note that no type compatibility checks can be done for zero strides, so be
@@ -1826,7 +1836,7 @@ template<class U, unsigned dimensions, class T> StridedArrayView<dimensions, U> 
 @m_since{2020,06}
 
 Size of the new array is the same as original. Expects that the target type is
-[standard layout](http://en.cppreference.com/w/cpp/concept/StandardLayoutType)
+[standard layout](https://en.cppreference.com/w/cpp/named_req/StandardLayoutType.html)
 and @cpp sizeof(U) @ce is not larger than any @ref StridedArrayView::stride() "stride()"
 of the original array. Works with negative and zero strides as well, however
 note that no type compatibility checks can be done for zero strides, so be
@@ -1959,10 +1969,11 @@ being divisible by the size of @p U. The resulting last dimension has a size
 that's a ratio of @p T and @p U sizes and stride equivalent to @p U, being
 again contiguous.
 
-Expects that both types are [standard layout](http://en.cppreference.com/w/cpp/concept/StandardLayoutType) and @cpp sizeof(U) @ce is not larger than any
-@ref StridedArrayView::stride() "stride()" of the original array. Works with
-negative and zero strides as well, however note that no type compatibility
-checks can be done for zero strides, so be extra careful in that case.
+Expects that both types are [standard layout](https://en.cppreference.com/w/cpp/named_req/StandardLayoutType.html)
+and @cpp sizeof(U) @ce is not larger than any @ref StridedArrayView::stride() "stride()"
+of the original array. Works with negative and zero strides as well, however
+note that no type compatibility checks can be done for zero strides, so be
+extra careful in that case.
 @see @ref StridedArrayView::isContiguous()
 @todo deprecate the dimension changing functionality in favor of new
     arrayCastFlatten<dimensions, T>() / arrayCastInflate<dimensions, T>() APIs
@@ -1995,7 +2006,7 @@ Inflates the last dimension into the new type @p U, its element count being
 always be one more than @p dimensions. For flattening the view (inverse of this
 operation) you need to cast to a concrete type first.
 
-Expects that the target type is [standard layout](http://en.cppreference.com/w/cpp/concept/StandardLayoutType)
+Expects that the target type is [standard layout](https://en.cppreference.com/w/cpp/named_req/StandardLayoutType.html)
 and @cpp sizeof(U) @ce is not larger than any
 @ref StridedArrayView::stride() "stride()" of the original array. Works with
 negative and zero strides as well, however note that no type compatibility
@@ -2273,7 +2284,8 @@ template<unsigned dimensions, class T> ArrayView<T> StridedArrayView<dimensions,
     CORRADE_DEBUG_ASSERT(isContiguous(),
         "Containers::StridedArrayView::asContiguous(): the view is not contiguous", {});
     std::size_t size = 1;
-    for(std::size_t i = 0; i != dimensions; ++i) size *= _size._data[i];
+    for(std::size_t i = 0; i != dimensions; ++i)
+        size *= _size._data[i];
     return {static_cast<T*>(_data), size};
 }
 
@@ -2471,27 +2483,27 @@ template<class T, class U, class V, std::size_t size> std::size_t memberFunction
 
 #ifndef DOXYGEN_GENERATING_OUTPUT
 template<unsigned dimensions, class T> template<class U, class V, class W, typename std::enable_if<!std::is_const<W>::value, int>::type> StridedArrayView<dimensions, U> StridedArrayView<dimensions, T>::slice(U&(V::*memberFunction)()) const {
-    return StridedArrayView<dimensions, U>{_size, _stride, reinterpret_cast<U*>(static_cast<ArithmeticType*>(_data) +
-        /* The T is needed to avoid accidentally passing a member function
-           pointer of a completely different type */
-        Implementation::memberFunctionSliceOffset<T>(memberFunction))
-    };
+    return StridedArrayView<dimensions, U>{_size, _stride, _data ?
+        reinterpret_cast<U*>(static_cast<ArithmeticType*>(_data) +
+            /* The T is needed to avoid accidentally passing a member function
+               pointer of a completely different type */
+            Implementation::memberFunctionSliceOffset<T>(memberFunction)) : nullptr};
 }
 
 template<unsigned dimensions, class T> template<class U, class V, class W, typename std::enable_if<!std::is_const<W>::value, int>::type> StridedArrayView<dimensions, U> StridedArrayView<dimensions, T>::slice(U&(V::*memberFunction)() &) const {
-    return StridedArrayView<dimensions, U>{_size, _stride, reinterpret_cast<U*>(static_cast<ArithmeticType*>(_data) +
-        /* The T is needed to avoid accidentally passing a member function
-           pointer of a completely different type */
-        Implementation::memberFunctionSliceOffset<T>(memberFunction))
-    };
+    return StridedArrayView<dimensions, U>{_size, _stride, _data ?
+        reinterpret_cast<U*>(static_cast<ArithmeticType*>(_data) +
+            /* The T is needed to avoid accidentally passing a member function
+               pointer of a completely different type */
+            Implementation::memberFunctionSliceOffset<T>(memberFunction)) : nullptr};
 }
 
 template<unsigned dimensions, class T> template<class U, class V, class W, typename std::enable_if<std::is_const<W>::value, int>::type> StridedArrayView<dimensions, const U> StridedArrayView<dimensions, T>::slice(const U&(V::*memberFunction)() const) const {
-    return StridedArrayView<dimensions, const U>{_size, _stride, reinterpret_cast<const U*>(static_cast<ArithmeticType*>(_data) +
-        /* The T is needed to avoid accidentally passing a member function
-           pointer of a completely different type */
-        Implementation::memberFunctionSliceOffset<T>(memberFunction))
-    };
+    return StridedArrayView<dimensions, const U>{_size, _stride, _data ?
+        reinterpret_cast<const U*>(static_cast<ArithmeticType*>(_data) +
+            /* The T is needed to avoid accidentally passing a member function
+               pointer of a completely different type */
+            Implementation::memberFunctionSliceOffset<T>(memberFunction)) : nullptr};
 }
 
 template<unsigned dimensions, class T> template<class U, class V, class W,
@@ -2501,19 +2513,19 @@ template<unsigned dimensions, class T> template<class U, class V, class W,
     typename std::enable_if<std::is_const<W>::value, int>::type
     #endif
 > StridedArrayView<dimensions, const U> StridedArrayView<dimensions, T>::slice(const U&(V::*memberFunction)() const &) const {
-    return StridedArrayView<dimensions, const U>{_size, _stride, reinterpret_cast<const U*>(static_cast<ArithmeticType*>(_data) +
-        /* The T is needed to avoid accidentally passing a member function
-           pointer of a completely different type */
-        Implementation::memberFunctionSliceOffset<T>(memberFunction))
-    };
+    return StridedArrayView<dimensions, const U>{_size, _stride, _data ?
+        reinterpret_cast<const U*>(static_cast<ArithmeticType*>(_data) +
+            /* The T is needed to avoid accidentally passing a member function
+               pointer of a completely different type */
+            Implementation::memberFunctionSliceOffset<T>(memberFunction)) : nullptr};
 }
 
 template<unsigned dimensions, class T> template<class U> auto StridedArrayView<dimensions, T>::slice(U&& memberFunction) const ->  StridedArrayView<dimensions, typename Implementation::StridedArrayViewSliceResultOf<T, U>::Type> {
-    return StridedArrayView<dimensions, typename Implementation::StridedArrayViewSliceResultOf<T, U>::Type>{_size, _stride, reinterpret_cast<typename Implementation::StridedArrayViewSliceResultOf<T, U>::Type*>(static_cast<ArithmeticType*>(_data) +
-        /* The T is needed to avoid accidentally passing a member function
-           pointer of a completely different type */
-        Implementation::memberFunctionSliceOffset<T>(memberFunction))
-    };
+    return StridedArrayView<dimensions, typename Implementation::StridedArrayViewSliceResultOf<T, U>::Type>{_size, _stride,
+        reinterpret_cast<typename Implementation::StridedArrayViewSliceResultOf<T, U>::Type*>(static_cast<ArithmeticType*>(_data) +
+            /* The T is needed to avoid accidentally passing a member function
+               pointer of a completely different type */
+            Implementation::memberFunctionSliceOffset<T>(memberFunction))};
 }
 #endif
 
@@ -2529,10 +2541,14 @@ template<unsigned dimensions, class T> auto StridedArrayView<dimensions, T>::sli
     Containers::Size<dimensions> sizeOffset{Corrade::NoInit};
     Containers::Stride<dimensions> stride{Corrade::NoInit};
     for(std::size_t i = 0; i != dimensions; ++i) {
+        #ifdef CORRADE_TARGET_32BIT
         /* All asserts related to BitArray size limits are debug so make this
-           one debug as well */
+           one debug as well. Additionally, it makes little sense to check the
+           size constraint on 64-bit, if 64-bit code happens to go over then
+           it's got bigger problems than this assert. */
         CORRADE_DEBUG_ASSERT(_size._data[i] < std::size_t{1} << (sizeof(std::size_t)*8 - 3),
             "Containers::StridedArrayView::sliceBit(): size expected to be smaller than 2^" << Utility::Debug::nospace << (sizeof(std::size_t)*8 - 3) << "bits, got" << _size, {});
+        #endif
         sizeOffset._data[i] = _size._data[i] << 3;
         stride._data[i] = _stride._data[i] << 3;
     }
@@ -2566,7 +2582,8 @@ template<unsigned dimensions, class T> template<unsigned newDimensions> StridedA
 template<unsigned dimensions, class T> StridedArrayView<dimensions, T> StridedArrayView<dimensions, T>::every(const std::ptrdiff_t step) const {
     Containers::Stride<dimensions> steps;
     steps[0] = step;
-    for(std::size_t i = 1; i != dimensions; ++i) steps[i] = 1;
+    for(std::size_t i = 1; i != dimensions; ++i)
+        steps[i] = 1;
     return every(steps);
 }
 

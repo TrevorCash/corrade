@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -166,8 +166,10 @@ ComparisonStatusFlags Comparator<Compare::StringHasPrefix>::operator()(const Con
 
     /* If the strings are different, we can print them both in a verbose
        message */
-    if(!actual.hasPrefix(expectedPrefix)) return ComparisonStatusFlag::Failed;
-    if(actual != expectedPrefix) return ComparisonStatusFlag::Verbose;
+    if(!actual.hasPrefix(expectedPrefix))
+        return ComparisonStatusFlag::Failed;
+    if(actual != expectedPrefix)
+        return ComparisonStatusFlag::Verbose;
     return {};
 }
 
@@ -191,8 +193,10 @@ ComparisonStatusFlags Comparator<Compare::StringHasSuffix>::operator()(const Con
 
     /* If the strings are different, we can print them both in a verbose
        message */
-    if(!actual.hasSuffix(expectedSuffix)) return ComparisonStatusFlag::Failed;
-    if(actual != expectedSuffix) return ComparisonStatusFlag::Verbose;
+    if(!actual.hasSuffix(expectedSuffix))
+        return ComparisonStatusFlag::Failed;
+    if(actual != expectedSuffix)
+        return ComparisonStatusFlag::Verbose;
     return {};
 }
 
@@ -216,8 +220,10 @@ ComparisonStatusFlags Comparator<Compare::StringContains>::operator()(const Cont
 
     /* If the strings are different, we can print them both in a verbose
        message */
-    if(!actual.contains(expectedToContain)) return ComparisonStatusFlag::Failed;
-    if(actual != expectedToContain) return ComparisonStatusFlag::Verbose;
+    if(!actual.contains(expectedToContain))
+        return ComparisonStatusFlag::Failed;
+    if(actual != expectedToContain)
+        return ComparisonStatusFlag::Verbose;
     return {};
 }
 
@@ -242,7 +248,8 @@ ComparisonStatusFlags Comparator<Compare::StringNotContains>::operator()(const C
 
     /* Unlike the other comparators, here it can't pass if the strings are the
        same, meaning we report the verbose message always */
-    if(actual.contains(expectedToNotContain)) return ComparisonStatusFlag::Failed;
+    if(actual.contains(expectedToNotContain))
+        return ComparisonStatusFlag::Failed;
     return ComparisonStatusFlag::Verbose;
 }
 

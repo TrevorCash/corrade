@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -66,7 +66,7 @@ inline std::size_t resourceLookup(const unsigned int count, const unsigned int* 
         [positions, filenames](const Position& position, const Containers::StringView filename) {
             /* The upper 8 bits of filename are reserved for padding */
             const std::size_t end = position.filenamePadding & 0x00ffffffu;
-            const std::size_t begin = &position == positions ? 0 : (&position - 1)->filenamePadding & 0x00ffffffu;
+            const std::size_t begin = &position == positions.data() ? 0 : (&position - 1)->filenamePadding & 0x00ffffffu;
             /* Not constructing a temporary StringView here as this shall be
                faster */
             /** @todo Actually, temporary StringView *could* be faster because
@@ -87,12 +87,14 @@ inline std::size_t resourceLookup(const unsigned int count, const unsigned int* 
         });
 
     /* No lower bound found */
-    if(found == positions.end()) return count;
+    if(found == positions.end())
+        return count;
 
     /* Check that the filenames match --- it only returns a lower bound, not an
        exact match */
     const std::size_t i = found - positions.begin();
-    if(filename != resourceFilenameAt(positionData, filenames, i)) return count;
+    if(filename != resourceFilenameAt(positionData, filenames, i))
+        return count;
 
     /* Return the found index */
     return i;

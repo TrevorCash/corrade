@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -37,6 +37,7 @@
 #include "Corrade/Containers/String.h"
 #include "Corrade/Containers/StringIterable.h"
 #include "Corrade/Utility/Format.h" /* numeric JsonWriter::write() */
+#include "Corrade/Utility/Json.h"
 #include "Corrade/Utility/Macros.h" /* CORRADE_FALLTHROUGH */
 #include "Corrade/Utility/Path.h"
 
@@ -46,6 +47,7 @@ using namespace Containers::Literals;
 
 namespace {
 
+#ifndef CORRADE_NO_ASSERT
 constexpr const char* ExpectingString[]{
     "a value",
     "an array value or array end",
@@ -54,6 +56,7 @@ constexpr const char* ExpectingString[]{
     "an object value",
     "document end"
 };
+#endif
 
 enum class Expecting {
     Value,
@@ -178,7 +181,8 @@ void JsonWriter::writeCommaNewlineIndentInternal() {
     }
 
     /* Comma after previous value */
-    if(state.needsCommaBefore) arrayAppend(state.out, state.commaAndSpace);
+    if(state.needsCommaBefore)
+        arrayAppend(state.out, state.commaAndSpace);
 
     /* Newline and indent */
     arrayAppend(state.out, state.whitespace.prefix(state.levels.back().first()));
@@ -533,6 +537,9 @@ JsonWriter& JsonWriter::write(const Containers::StringView value) {
     #ifndef CORRADE_NO_ASSERT
     State& state = *_state;
     #endif
+    /* Object key is *not* expected to prevent accidents where a missing key
+       would mean the next (string) value is wrongly interpreted as a key
+       instead of failing directly when writing a value without a key before */
     CORRADE_ASSERT(
         state.expecting == Expecting::Value ||
         state.expecting == Expecting::ObjectValue ||
@@ -666,6 +673,8 @@ JsonWriter& JsonWriter::writeArray(const Containers::StringIterable& values, con
 
 JsonWriter& JsonWriter::writeJson(const Containers::StringView json) {
     State& state = *_state;
+    /* Object key is *not* expected for consistency with write() / writeKey(),
+       writeJsonKey() is meant for keys instead */
     CORRADE_ASSERT(
         state.expecting == Expecting::Value ||
         state.expecting == Expecting::ObjectValue ||
@@ -685,6 +694,121 @@ JsonWriter& JsonWriter::writeJson(const Containers::StringView json) {
     return *this;
 }
 
+JsonWriter& JsonWriter::writeJsonKey(const Containers::StringView json) {
+    State& state = *_state;
+    CORRADE_ASSERT(state.expecting == Expecting::ObjectKeyOrEnd,
+        "Utility::JsonWriter::writeJsonKey(): expected" << ExpectingString[int(state.expecting)], *this);
+
+    /* Comma, newline and indent */
+    writeCommaNewlineIndentInternal();
+
+    /* Literal value */
+    arrayAppend(state.out, json);
+
+    /* Colon */
+    arrayAppend(state.out, state.colonAndSpace);
+
+    /* Next expecting an object value (i.e., not indented, no comma) */
+    state.expecting = Expecting::ObjectValue;
+
+    return *this;
+}
+
+JsonWriter& JsonWriter::writeJson(const JsonToken json) {
+    #ifndef CORRADE_NO_ASSERT
+    State& state = *_state;
+    #endif
+    /* Object key is *not* expected for consistency with the StringView
+       overload. There's also no writeJsonKey() for JsonToken, because it's
+       so far unclear whether such a token should be processed including its
+       children (and thus writing its value as well) or as just a key. Might
+       loosen up the requirements once a practical use case emerges. */
+    CORRADE_ASSERT(
+        state.expecting == Expecting::Value ||
+        state.expecting == Expecting::ObjectValue ||
+        state.expecting == Expecting::ArrayValueOrArrayEnd,
+        "Utility::JsonWriter::writeJson(): expected" << ExpectingString[int(state.expecting)], *this);
+
+    /* Complementary to the above, if the token is a string, it should be a
+       string value, not a key (with children) */
+    CORRADE_ASSERT(json.type() != JsonToken::Type::String || json.children().isEmpty(),
+        "Utility::JsonWriter::writeJson(): expected a value token but got an object key", *this);
+
+    /* Iterate arrays and recurse */
+    const JsonToken::Type type = json.type();
+    if(type == JsonToken::Type::Array) {
+        beginArray();
+        /* Not using asArray() as that only works if the array is parsed. If
+           the array is empty, firstChild() is an invalid iterator, test that
+           as well. */
+        for(JsonIterator i = json.firstChild(), end = json.next(); i && i != end; i = i->next())
+            writeJson(*i);
+        endArray();
+
+    /* Iterate objects and recurse */
+    } else if(type == JsonToken::Type::Object) {
+        beginObject();
+        /* Not using asArray() as that only works if the object is parsed. If
+           the object is empty, firstChild() is an invalid iterator, test that
+           as well. */
+        for(JsonIterator i = json.firstChild(), end = json.next(); i && i != end; i = i->next()) {
+            if(i->isParsed())
+                writeKey(i->asString());
+            else
+                writeJsonKey(i->data());
+            writeJson(*i->firstChild());
+        }
+        endObject();
+
+    /* Write values */
+    } else switch(json.parsedType()) {
+        case JsonToken::ParsedType::None:
+            writeJson(json.data());
+            break;
+        case JsonToken::ParsedType::Double:
+            write(json.asDouble());
+            break;
+        case JsonToken::ParsedType::Float:
+            write(json.asFloat());
+            break;
+        case JsonToken::ParsedType::UnsignedInt:
+            write(json.asUnsignedInt());
+            break;
+        case JsonToken::ParsedType::Int:
+            write(json.asInt());
+            break;
+        case JsonToken::ParsedType::UnsignedLong:
+            write(json.asUnsignedLong());
+            break;
+        case JsonToken::ParsedType::Long:
+            write(json.asLong());
+            break;
+        case JsonToken::ParsedType::Other:
+            switch(type) {
+                case JsonToken::Type::Null:
+                    write(json.asNull());
+                    break;
+                case JsonToken::Type::Bool:
+                    write(json.asBool());
+                    break;
+                case JsonToken::Type::String:
+                    write(json.asString());
+                    break;
+                /* LCOV_EXCL_START */
+                /* Numbers are never ParsedType::Other */
+                case JsonToken::Type::Number:
+                /* These are already handled above */
+                case JsonToken::Type::Array:
+                case JsonToken::Type::Object:
+                    CORRADE_INTERNAL_ASSERT_UNREACHABLE();
+                /* LCOV_EXCL_STOP */
+            }
+            break;
+    }
+
+    return *this;
+}
+
 Containers::StringView JsonWriter::toString() const {
     const State& state = *_state;
     CORRADE_ASSERT(
@@ -694,7 +818,7 @@ Containers::StringView JsonWriter::toString() const {
     /* The array contains a non-sentinel \0, strip it. See finalizeDocument()
        for more information. */
     /** @todo drop workarounds once growable String exists */
-    return Containers::StringView{state.out, state.out.size() - 1, Containers::StringViewFlag::NullTerminated};
+    return Containers::StringView{state.out.data(), state.out.size() - 1, Containers::StringViewFlag::NullTerminated};
 }
 
 bool JsonWriter::toFile(const Containers::StringView filename) const {

@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -33,6 +33,11 @@ namespace {
 struct IntPtr {
     explicit IntPtr(int* a): a{a} {}
     IntPtr(const IntPtr&) = delete;
+    /* With the guaranteed copy/move elision in C++17 this one might be unused
+       as well */
+    #ifdef CORRADE_TARGET_CXX17
+    CORRADE_UNUSED
+    #endif
     IntPtr(IntPtr&& other): a{other.a} {
         other.a = nullptr;
     }
@@ -90,6 +95,7 @@ struct PointerTest: TestSuite::Tester {
     void constructInPlaceMakeAmbiguous();
     void constructDerivedTriviallyDestructible();
     void constructDerivedVirtualDestructor();
+    void constructConvertibleButNotDerived();
     void constructIncomplete();
 
     void constructZeroNullPointerAmbiguity();
@@ -134,6 +140,7 @@ PointerTest::PointerTest() {
     addTests({&PointerTest::constructInPlaceMakeAmbiguous,
               &PointerTest::constructDerivedTriviallyDestructible,
               &PointerTest::constructDerivedVirtualDestructor,
+              &PointerTest::constructConvertibleButNotDerived,
               &PointerTest::constructIncomplete,
 
               &PointerTest::constructZeroNullPointerAmbiguity,
@@ -438,6 +445,54 @@ void PointerTest::constructDerivedVirtualDestructor() {
     CORRADE_VERIFY(!std::is_constructible<Pointer<Derived>, Base*>::value);
     CORRADE_VERIFY(std::is_constructible<Pointer<Base>, Pointer<Derived>>::value);
     CORRADE_VERIFY(!std::is_constructible<Pointer<Derived>, Pointer<Base>>::value);
+}
+
+void PointerTest::constructConvertibleButNotDerived() {
+    /* The base-from-derived constructor cannot use std::is_base_of<T, U>
+       because it requires T to be defined, which is sometimes a problem with
+       generic code such as the following.
+
+        template<class T> void foo(Containers::Pointer<T>&& derived) {
+            Containers::Pointer<Base> base{Utility::move(derived)};
+            ...
+        }
+
+       Instead, std::is_convertible<U*, T*> is used, which doesn't have this
+       requirement, and the only difference compared to std::is_base_of<T, U>
+       seems to be that it doesn't work for private inheritance (which is fine,
+       as the Pointer wouldn't work with that either). This test verifies that
+       code where U is convertible to T but isn't derived from T correctly
+       fails to compile (i.e., causing a "no matching constructor" error, not
+       some subsequent failure inside the constructor). */
+
+    struct Base {
+        int a;
+        explicit Base(int a): a{a} {}
+        virtual ~Base() = default;
+    };
+
+    struct Derived: Base {};
+
+    struct Unrelated {
+        /* The operator would only get used in the `b = move(a)` expression
+           below, and only if it's implemented incorrectly, so yes, it's
+           unused */
+        CORRADE_UNUSED operator Base&() { return base; }
+        Base base{3};
+    };
+
+    CORRADE_VERIFY(std::is_constructible<Containers::Pointer<Base>, Containers::Pointer<Derived>&&>::value);
+    /* With std::is_convertible<U&, T&> this would pass (although the commented
+       out code below would still fail to compile), which is incorrect */
+    CORRADE_VERIFY(!std::is_constructible<Containers::Pointer<Base>, Containers::Pointer<Unrelated>&&>::value);
+
+    Containers::Pointer<Unrelated> a{Corrade::InPlaceInit};
+    CORRADE_COMPARE(a->base.a, 3);
+
+    /* This shouldn't compile */
+    Containers::Pointer<Base> b;
+    // b = Utility::move(a);
+    CORRADE_VERIFY(!b);
 }
 
 void PointerTest::constructIncomplete() {

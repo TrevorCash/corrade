@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -117,8 +117,9 @@ namespace Corrade {
 -   New @ref Containers::BasicStringView "Containers::StringView" class as a
     lightweight but more flexible alternative to C++17 @ref std::string_view.
     See also [mosra/corrade#123](https://github.com/mosra/corrade/issues/123),
-    [mosra/corrade#171](https://github.com/mosra/corrade/issues/171) and
-    [mosra/corrade#188](https://github.com/mosra/corrade/issues/188).
+    [mosra/corrade#171](https://github.com/mosra/corrade/issues/171),
+    [mosra/corrade#188](https://github.com/mosra/corrade/issues/188) and
+    [mosra/corrade#196](https://github.com/mosra/corrade/issues/196).
 -   New @ref Containers::MoveReference and @ref Containers::AnyReference
     counterparts to @ref Containers::Reference for exclusively r-value
     references and both l-value and r-value references
@@ -237,6 +238,11 @@ namespace Corrade {
 -   New @ref Utility::String::parseNumberSequence() utility for parsing number
     sequences such as `1-3,5,17`, useful especially for convenient command-line
     APIs
+-   New @ref Utility::String::parseDecimal(),
+    @relativeref{Utility::String,parseHexadecimal()} and
+    @relativeref{Utility::String,parseFloat()} utilities for number parsing,
+    intended to provide better and faster alternatives to @ref std::strtoull(),
+    @ref std::strtoll() and @ref std::strtof()
 -   New @ref Utility::Unicode::currentChar() utility for finding a start of a
     UTF-8 sequence
 -   New @ref CORRADE_INTERNAL_ASSERT_EXPRESSION() macro for assertions that can
@@ -251,12 +257,17 @@ namespace Corrade {
     their non-`DEBUG` counterparts on debug builds and get compiled out on
     release builds; as well as a @ref CORRADE_NO_DEBUG_ASSERT define for
     querying if debug assertions are enabled. See also [mosra/corrade#136](https://github.com/mosra/corrade/issues/136).
+-   New @ref CORRADE_ASSERT_ABORT(), @ref CORRADE_ASSERT_MESSAGE_ABORT() and
+    @ref CORRADE_ASSERT_INCLUDE macros for overriding behavior for all
+    assertions at once.
 -   New @ref CORRADE_LIKELY() and @ref CORRADE_UNLIKELY() macros for
     instruction cache microoptimizations in tight loops
 -   New @ref CORRADE_PASSTHROUGH() helper macro, an inverse of
     @ref CORRADE_NOOP()
 -   New @ref CORRADE_CONSTEXPR20 macro, a variant of @ref CORRADE_CONSTEXPR14
     for C++20
+-   New @ref CORRADE_NODISCARD() macro, providing @cpp [[nodiscard]] @ce
+    functionality on C++11 and C++14 as well
 -   New @ref Corrade/Utility/StlForwardTupleSizeElement.h header for
     forward-declaring @m_class{m-doc-external} [std::tuple_size](https://en.cppreference.com/w/cpp/utility/tuple_size)
     and @m_class{m-doc-external} [std::tuple_element](https://en.cppreference.com/w/cpp/utility/tuple_element)
@@ -284,7 +295,7 @@ namespace Corrade {
 -   A new convenience @ref Containers::Array::Array(ArrayView<T>, D) overload
     for constructing non-owned @ref Containers::Array instances from existing
     views
--   Added @ref Containers::arrayShrink(Array<T>&, DefaultInitT) overload for
+-   Added a @ref Containers::arrayShrink(Array<T>&, ValueInitT) overload for
     cases where it's not desired to have an @ref Containers::Array with a
     `NoInit` deleter
 -   Added @ref Containers::arrayResize(Array<T>&, std::size_t, const typename std::common_type<T>::type&)
@@ -428,11 +439,10 @@ namespace Corrade {
     contained in a resource group
 -   @ref Utility::format() now supports printing integers as characters using
     the @cpp "{:c}" @ce modifier
+-   @ref Utility::format() now supports printing the @cpp bool @ce type,
+    treating it simply as a 1-bit integer
 -   @ref Utility::format() now accepts also a C++17 @ref std::string_view if
     you include @ref Corrade/Utility/FormatStlStringView.h
--   @ref Utility::String::split() and
-    @ref Utility::String::splitWithoutEmptyParts() now have
-    @ref Containers::StringView overloads that allocate much less
 -   Added a @ref Utility::String::replaceAll(Containers::String, char, char)
     overload for more optimal single-character replacement and a
     @ref Utility::String::replaceAllInPlace(Containers::MutableStringView, char, char)
@@ -499,11 +509,12 @@ namespace Corrade {
 -   @ref CORRADE_DEPRECATED_ENUM() is now a no-op for Qt's Meta Object Compiler
     as it caused parse errors on older Qt versions
 -   With CMake 3.20 and newer it's possible to compile for Android NDK r19+
-    without explicitly supplying various system paths. Additionally, when `CMAKE_INSTALL_PREFIX` points to Android NDK sysroot, the `LIB_SUFFIX`
-    gets autodetected to a correct triplet + API level version subdirectory,
-    making the installed project discoverable by both vanilla CMake and Gradle.
-    On CMake 3.16 to 3.19 it's required to set two extra variables for the
-    same effect. See @ref building-corrade-cross-android and
+    without explicitly supplying various system paths. Additionally, when
+    `CMAKE_INSTALL_PREFIX` points to Android NDK sysroot, `CMAKE_INSTALL_LIBDIR`
+    gets adjusted to a correct triplet + API level version subdirectory, making
+    the installed project discoverable by both vanilla CMake and Gradle. On
+    CMake 3.16 to 3.19 it's required to set two extra variables for the same
+    effect. See @ref building-corrade-cross-android and
     [mosra/magnum#310](https://github.com/mosra/magnum/issues/310) for more
     information.
 -   Updated Debian build instructions to pass `--no-sign` to
@@ -571,8 +582,8 @@ namespace Corrade {
     crash on Emscripten 3.1.27+, which reduced the default stack size from
     5 MB to 64 kB.
 -   New @cpp #pragma ACME forget @ce option in the @ref acme utility
--   `/OPT:NOICF` is now added for the @ref Interconnect library for clang-cl
-    as well (see [mosra/corrade#178](https://github.com/mosra/corrade/issues/178))
+-   `/OPT:NOICF` is now added for the @cpp Interconnect @ce library for
+    clang-cl as well (see [mosra/corrade#178](https://github.com/mosra/corrade/issues/178))
 -   The Emscripten toolchain no longer uses a `*.bc` extension for static
     libraries, as that breaks builds with version 3.1.52+. See
     [mosra/magnum#633](https://github.com/mosra/magnum/issues/633) for more
@@ -606,6 +617,17 @@ namespace Corrade {
     bundled for cross-compiling (see [mosra/magnum#656](https://github.com/mosra/magnum/issues/656))
 -   The Linux ThreadSanitizer CI build was updated to work with ASLR again
     (see [mosra/corrade#191](https://github.com/mosra/corrade/pull/191))
+-   Fixed a shadowing warning on Clang 19 (see [mosra/corrade#204](https://github.com/mosra/corrade/pull/204))
+-   Skipping a test that fails to compile due to GCC 11 and 12 regression (see
+    [mosra/corrade#205](https://github.com/mosra/corrade/issues/205))
+-   Made thread-local storage in @ref Utility::Debug internals work with MSYS2
+    GCC 16.1+, which switched to native TLS instead of emulated. MinGW Clang,
+    which uses native TLS as well, worked before already. See
+    [mosra/corrade#208](https://github.com/mosra/corrade/issues/208) for
+    details.
+-   The buildsystem now uses CMake's `GNUInstallDirs` module for a standardized
+    way to specify installation location of binaries, libraries, include files
+    and other data (see [mosra/magnum#696](https://github.com/mosra/magnum/issues/696))
 
 @subsection corrade-changelog-latest-bugfixes Bug fixes
 
@@ -628,6 +650,11 @@ namespace Corrade {
     @relativeref{Utility::Path,configurationDirectory()} to not use an old
     Windows API that tends to prefer OneDrive over local user directories
     (see [mosra/corrade#144](https://github.com/mosra/corrade/pull/144))
+-   @ref Utility::Path::homeDirectory() and
+    @relativeref{Utility::Path,configurationDirectory()} now gracefully handle
+    the (very rare) cases where the directories aren't available on Windows due
+    to the user having no profile (see [mosra/corrade#132](https://github.com/mosra/corrade/issues/132)
+    and [mosra/corrade#141](https://github.com/mosra/corrade/pull/141))
 -   Added GCC 4.8-specific workarounds to @ref Containers::Array, growable
     array utils, @ref Containers::Optional, @ref Containers::Pointer and
     @ref Containers::StaticArray where using @cpp T{b} @ce or
@@ -698,6 +725,9 @@ namespace Corrade {
     / @ref Containers::BasicStridedBitArrayView "Containers::StridedBitArrayView"
     strides would sometimes result in out-of-bounds memory reads on Emscripten
     3.1.66+.
+-   Fixed a bug where reusing a @ref Utility::format() placeholder multiple
+    times with different precision option could result in the output having
+    extra garbage characters at the end (see [mosra/corrade#202](https://github.com/mosra/corrade/issues/202))
 
 @subsection corrade-changelog-latest-deprecated Deprecated APIs
 
@@ -708,6 +738,11 @@ namespace Corrade {
     recognized with a warning. In particular, if `BUILD_DEPRECATED` is set but
     `CORRADE_BUILD_DEPRECATED` not, the unprefixed options are also recognized.
     See also [mosra/corrade#139](https://github.com/mosra/corrade/issues/139).
+-   The @cpp Interconnect @ce library is deprecated as a whole as its design
+    relies on member function pointers being unique, which is impossible to
+    guarantee across all platform configurations and compilers, leading to
+    subtle hard-to-discover bugs. At the moment there is no builtin
+    replacement.
 -   @cpp Containers::Array::empty() @ce, @cpp ArrayView::empty() @ce,
     @cpp StaticArray::empty() @ce, @cpp StaticArrayView::empty() @ce and
     @cpp StridedArrayView::empty() @ce is deprecated in favor of
@@ -736,6 +771,17 @@ namespace Corrade {
         @cpp suffix() @ce API, taking a suffix length instead of an offset, is
         scheduled to be reintroduced once enough time passes after the
         deprecated API gets removed to avoid silent breakages in existing code.
+-   Implicit conversion of @ref Containers::Array,
+    @relativeref{Containers,ArrayView},
+    @relativeref{Containers,StaticArray} and
+    @relativeref{Containers,StaticArrayView} to a pointer is deprecated in
+    favor of using the explicit @relativeref{Containers::Array,data()} or
+    @relativeref{Containers::Array,begin()} functions that convey the intent
+    clearer
+-   @ref Containers::Array construction from just a size value alone is
+    deprecated as it was a design error preventing unambiguous construction
+    from an initializer list, use @ref Containers::Array::Array(ValueInitT, std::size_t)
+    instead
 -   `Size` and `Stride` typedefs in @ref Containers::StridedArrayView are
     deprecated in favor of @relativeref{Containers,Size},
     @relativeref{Containers,Size1D}, @relativeref{Containers,Size2D},
@@ -744,6 +790,13 @@ namespace Corrade {
     @relativeref{Containers,Stride2D}, @relativeref{Containers,Stride3D} and
     @relativeref{Containers,Stride4D} aliases living directly in the
     @ref Containers namespace, as those are significantly shorter to type
+-   @ref DefaultInit initialization in @ref Containers::Array and growable
+    array APIs, @ref Containers::StaticArray, @ref Containers::Pair,
+    @ref Containers::Triple and @ref Utility::allocateAligned() is deprecated
+    because C++'s default initialization keeps trivial types not initialized
+    and using it is unnecessarily error prone. Use either @ref ValueInit or
+    @ref NoInit instead to make the choice about content initialization
+    explicit.
 -   @cpp Utility::Directory::isSandboxed() @ce is deprecated in favor of
     @ref Utility::System::isSandboxed(), as that's the better place for this
     API to live in
@@ -836,6 +889,9 @@ namespace Corrade {
     deprecated in favor of @ref Containers::BasicStringView::hasPrefix() and
     @ref Containers::BasicStringView::hasSuffix(); the overloads taking
     @ref std::string are still kept
+-   All remaining @ref Utility::String APIs taking a @ref std::string are
+    deprecated in favor of variants implemented directly on
+    @ref Containers::BasicStringView
 -   @cpp CORRADE_ALIGNAS() @ce and @cpp CORRADE_NORETURN @ce macros are
     deprecated as they were originally introduced for compatibility with GCC
     4.7 and older and aren't needed anymore. Use the standard C++11
@@ -869,7 +925,7 @@ namespace Corrade {
     @cpp Containers::NoInit @ce, @cpp Containers::NoCreate @ce,
     @cpp Containers::DirectInit @ce, @cpp Containers::InPlaceInit @ce and
     related tag types were moved to @ref Corrade/Tags.h and the root
-    @ref Corrade namespace, available  as @ref DefaultInit, @ref ValueInit,
+    @ref Corrade namespace, available as @ref DefaultInit, @ref ValueInit,
     @ref NoInit, @ref NoCreate, @ref DirectInit, @ref InPlaceInit and related
     tag types
 -   @ref PluginManager and @ref TestSuite APIs that switched from
@@ -937,6 +993,11 @@ namespace Corrade {
     pointer would lead to resource leaks as the derived type destructor would
     never get called. Existing code where this silently happened will now fail
     to compile and has to be updated.
+-   Removed the @cpp Interconnect::Connection::isConnected() @ce,
+    @cpp disconnect() @ce, @cpp isConnectionPossible() @ce and
+    @cpp connect() @ce APIs that were deprecated in 2019.10. Use
+    @cpp Interconnect::Emitter::isConnected() @ce and
+    @cpp Interconnect::disconnect() @ce instead.
 -   @ref PluginManager::AbstractManager::pluginList(),
     @relativeref{PluginManager::AbstractManager,aliasList()} and
     @ref PluginManager::PluginMetadata APIs now return @ref Containers::String,
@@ -970,11 +1031,10 @@ namespace Corrade {
     removed as they caused various ambiguities, so using these functions with
     @ref std::string may now need extra casts.
 -   @ref Utility::String::lowercase() and @ref Utility::String::uppercase()
-    now has overloads for both @ref Containers::StringView and
-    @ref std::string, which may cause ambiguous overload errors for existing
-    code that passes @cpp const char* @ce to it. Given that either type is
-    valid now, the code has to be updated to explicitly pass that type to the
-    function.
+    is now operating on a @ref Containers::StringView or
+    @ref Containers::String. The original @ref std::string overloads were
+    removed to prevent ambiguities, so using these functions with
+    @ref std::string may now need extra casts.
 -   @ref Utility::format() now returns a @ref Containers::String instead of
     @ref Containers::Array and @ref Utility::formatInto() now takes a
     @ref Containers::MutableStringView instead of @ref Containers::ArrayView.
@@ -1011,6 +1071,12 @@ namespace Corrade {
     @ref Corrade/Containers/StringStl.h is included for implicit conversions
     from/to a @ref std::string, but there's no implicit conversion for
     @ref std::wstring or @ref std::u32string.
+-   On MinGW the @ref main "Corrade::Main" library is now split into two
+    different static libraries, one for console apps and one for windows apps,
+    in order to use the corrrect entrypoint in both cases. This change should
+    be transparent when using CMake, although you likely need to update your
+    copy of `FindCorrade.cmake`. For changes required with custom buildsystems
+    see the @ref main-non-cmake "corresponding documentation section".
 
 @subsection corrade-changelog-latest-documentation Documentation
 
@@ -1169,8 +1235,8 @@ Released 2020-06-27, tagged as
 
 @subsubsection corrade-changelog-2020-06-changes-interconnect Interconnect library
 
--   @ref Interconnect::connect() now can recognize trivially copyable lambdas
-    also on GCC versions before 5 and store them more efficiently
+-   @cpp Interconnect::connect() @ce now can recognize trivially copyable
+    lambdas also on GCC versions before 5 and store them more efficiently
 
 @subsubsection corrade-changelog-2020-06-changes-pluginmanager PluginManager library
 
@@ -1482,11 +1548,11 @@ Released 2019-10-24, tagged as
 
 @subsubsection corrade-changelog-2019-10-changes-Interconnect Interconnect library
 
--   The @ref Interconnect library internals got reworked with less allocations,
-    better memory usage, improved signal emitting performance and support for
-    connecting to arbitrary function objects along with @ref std::function. See
-    also [mosra/corrade#63](https://github.com/mosra/corrade/pull/63) for more
-    information.
+-   The @cpp Interconnect @ce library internals got reworked with less
+    allocations, better memory usage, improved signal emitting performance and
+    support for connecting to arbitrary function objects along with
+    @ref std::function. See also [mosra/corrade#63](https://github.com/mosra/corrade/pull/63)
+    for more information.
 
 @subsubsection corrade-changelog-2019-10-changes-pluginmanager PluginManager library
 
@@ -1558,9 +1624,8 @@ Released 2019-10-24, tagged as
 -   Explicitly disabling a MSVC linker optimization that causes seemingly
     similar signals to be conflated together, causing erratic behavior. This is
     done automatically for CMake-based projects, see the
-    @ref Interconnect-Emitter-msvc-icf "Interconnect::Emitter" documentation
-    for more information when using custom buildsystems, see also
-    [mosra/corrade#51](https://github.com/mosra/corrade/issues/51).
+    @cpp Interconnect::Emitter @ce documentation for more information when
+    using custom buildsystems, see also [mosra/corrade#51](https://github.com/mosra/corrade/issues/51).
 -   Fixed compilation with Clang and `-std=gnu++14` (see [mosra/corrade#62](https://github.com/mosra/corrade/pull/62))
 -   @ref CORRADE_VISIBILITY_STATIC no longer exports symbols in static
     libraries to be consistent with hidden visibility by default, additionally
@@ -1579,7 +1644,7 @@ Released 2019-10-24, tagged as
     Studio as a C++ compiler, resulting in seemingly impossible errors. See
     [mosra/corrade#78](https://github.com/mosra/corrade/issues/78).
 -   Clarified interaction of `-fvisibility-inlines-hidden` and/or
-    `-Wl,-Bsymbolic-functions` GCC/Clang flags and @ref Interconnect::Emitter
+    `-Wl,-Bsymbolic-functions` GCC/Clang flags and @cpp Interconnect::Emitter @ce
 -   The @ref TestSuite library and all tests created with
     @ref corrade-cmake-add-test "corrade_add_test()" are now built with
     `-s DISABLE_EXCEPTION_CATCHING=0` being explicitly specified both for the
@@ -1617,13 +1682,13 @@ Released 2019-10-24, tagged as
     Android and API levels below 24
 -   Fixed @cpp Utility::Directory::read() @ce to work with files that report an
     early EOF (such as stuff from `/sys` on Linux)
--   Fixed @ref Interconnect::Emitter::emit() for signals from
+-   Fixed @cpp Interconnect::Emitter::emit() @ce for signals from
     multiply-inherited base classes on MSVC --- it was due to an insufficiently
     tested workaround for a template deduction limitation in the compiler (see
     [mosra/corrade#51](https://github.com/mosra/corrade/issues/51))
--   @ref Interconnect::Emitter::emit() now works correctly on MSVC for signals
-    from classes where multiple and/or virtual inheritance is involved (see
-    [mosra/corrade#51](https://github.com/mosra/corrade/issues/51))
+-   @cpp Interconnect::Emitter::emit() @ce now works correctly on MSVC for
+    signals from classes where multiple and/or virtual inheritance is involved
+    (see [mosra/corrade#51](https://github.com/mosra/corrade/issues/51))
 -   Fixed @ref CORRADE_COMPARE_WITH() to be callable with expressions such as
     @cpp *comparator @ce
 -   Fixed @ref Utility::Tweakable to work correctly with buildsystems using
@@ -1635,8 +1700,8 @@ Released 2019-10-24, tagged as
     this to be allowed on both.
 -   @cpp Utility::Directory::copy() @ce wasn't properly freeing both opened
     files if one of them failed to open (see [mosra/corrade#70](https://github.com/mosra/corrade/pull/70))
--   @ref Interconnect::Emitter::emit() (and signal/slot connections in general)
-    now work correctly with non-copyable arguments
+-   @cpp Interconnect::Emitter::emit() @ce (and signal/slot connections in
+    general) now work correctly with non-copyable arguments
 -   Fixed @ref Utility::Debug::isTty() (and thus also @ref TestSuite colored
     output) to reliably work on macOS. Because Xcode output window doesn't
     support ANSI color escape codes, tt was relying on an undocumented
@@ -1656,18 +1721,19 @@ Released 2019-10-24, tagged as
     @cpp Utility::Directory::exists() @ce. It was named like this to prevent it
     from looking like it works on directories only, but such name then caused
     people to ask if it works on directories as well, not helping anything.
--   `Interconnect::Connection::isConnected()` and
-    `Interconnect::Connection::disconnect()` are deprecated and print a warning
-    at runtime as the redesigned internals of the @ref Interconnect library now
-    make it impossible to check that the original @ref Interconnect::Emitter
-    object still exists. Use @ref Interconnect::Emitter::isConnected() and
-    @ref Interconnect::disconnect() instead.
+-   @cpp Interconnect::Connection::isConnected() @ce and
+    @cpp Interconnect::Connection::disconnect() @ce are deprecated and print a
+    warning at runtime as the redesigned internals of the @cpp Interconnect @ce
+    library now make it impossible to check that the original
+    @cpp Interconnect::Emitter @ce object still exists. Use
+    @cpp Interconnect::Emitter::isConnected() @ce and
+    @cpp Interconnect::disconnect() @ce instead.
 -   Re-connecting a disconnected signal using
-    `Interconnect::Connection::isConnectionPossible()` and
-    `Interconnect::Connection::connect()` is not possible anymore in order
-    to make the @ref Interconnect library more efficient. These two functions
-    are now deprecated and just returningthe value of (also deprecated)
-    `isConnected()`.
+    @cpp Interconnect::Connection::isConnectionPossible() @ce and
+    @cpp Interconnect::Connection::connect() @ce is not possible anymore in
+    order to make the @cpp Interconnect @ce library more efficient. These two
+    functions are now deprecated and just returning the value of (also
+    deprecated) @cpp isConnected() @ce.
 -   Signatures of @ref TestSuite::Comparator methods were changed in order to
     support new features. The old variant with
     @ref TestSuite::Comparator::operator()() "operator()()" returning a
@@ -1948,7 +2014,7 @@ Released 2018-10-23, tagged as
 @subsubsection corrade-changelog-2018-10-changes-testsuite TestSuite library
 
 -   Adapted Emscripten test runner markup for consistency with the
-    [m.css](http://mcss.mosra.cz) theme used in [Magnum](https://magnum.graphics)
+    [m.css](https://mcss.mosra.cz) theme used in [Magnum](https://magnum.graphics)
 -   It's now possible to have non-copyable and non-moveable
     @ref TestSuite::Comparator specializations
 
@@ -1985,7 +2051,7 @@ Released 2018-10-23, tagged as
 -   Worked around a misoptimization of @ref Utility::Sha1 when using GCC 6 with
     -O3 on Raspberry Pi Model 3 B+ (AArch64) (GCC 8 works properly again). See
     [mosra/corrade#45](https://github.com/mosra/corrade/issues/45).
--   It was not possible to use the @ref Interconnect::Emitter class with
+-   It was not possible to use the @cpp Interconnect::Emitter @ce class with
     virtual base classes on 32-bit Windows due to an incorrect assumption about
     member function pointer sizes (see
     [mosra/magnum-extras#7](https://github.com/mosra/magnum-extras/issues/7))

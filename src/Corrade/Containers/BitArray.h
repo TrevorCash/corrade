@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -86,9 +86,6 @@ the @ref Array class:
 -   @ref BitArray(NoInitT, std::size_t) keeps the contents uninitialized.
     Useful when you'll be overwriting the contents anyway. Equivalent to
     @cpp new char[(size + 7)/8] @ce.
-
-Unlike an @ref Array, there's no @ref DefaultInitT constructor, as the same
-behavior is already provided by @ref BitArray(NoInitT, std::size_t).
 
 @snippet Containers.cpp BitArray-usage-initialization
 
@@ -305,6 +302,18 @@ class CORRADE_UTILITY_EXPORT BitArray {
         inline void set(std::size_t i);
 
         /**
+         * @brief Use @ref setAll(bool) to set all bits or @ref set(std::size_t, bool) to set a single bit to a concrete value
+         *
+         * Deleted to avoid accidental use of @ref set(std::size_t) with a
+         * @cpp bool @ce.
+         */
+        #ifdef DOXYGEN_GENERATING_OUTPUT
+        void set(bool) = delete;
+        #else
+        template<class U, typename std::enable_if<std::is_same<U, bool>::value, int>::type = 0> void set(U) = delete;
+        #endif
+
+        /**
          * @brief Set all bits
          *
          * You can set just a range of bits by making a @ref slice() first.
@@ -320,6 +329,18 @@ class CORRADE_UTILITY_EXPORT BitArray {
          */
         /* MinGW complains loudly if the declaration doesn't also have inline */
         inline void reset(std::size_t i);
+
+        /**
+         * @brief Use @ref setAll(bool) to set all bits or @ref set(std::size_t, bool) to set a single bit to a concrete value
+         *
+         * Deleted to avoid accidental use of @ref reset(std::size_t) with a
+         * @cpp bool @ce.
+         */
+        #ifdef DOXYGEN_GENERATING_OUTPUT
+        void reset(bool) = delete;
+        #else
+        template<class U, typename std::enable_if<std::is_same<U, bool>::value, int>::type = 0> void reset(U) = delete;
+        #endif
 
         /**
          * @brief Reset all bits
@@ -473,7 +494,7 @@ inline void BitArray::reset(std::size_t i) {
 inline void BitArray::set(std::size_t i, bool value) {
     CORRADE_DEBUG_ASSERT(i < (_sizeOffset >> 3),
         "Containers::BitArray::set(): index" << i << "out of range for" << (_sizeOffset >> 3) << "bits", );
-    /* http://graphics.stanford.edu/~seander/bithacks.html#ConditionalSetOrClearBitsWithoutBranching */
+    /* https://graphics.stanford.edu/~seander/bithacks.html#ConditionalSetOrClearBitsWithoutBranching */
     char& byte = _data[((_sizeOffset & 0x07) + i) >> 3];
     byte ^= (-char(value) ^ byte) & (1 << ((_sizeOffset + i) & 0x07));
 }

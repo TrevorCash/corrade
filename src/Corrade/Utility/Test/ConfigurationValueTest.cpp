@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -296,10 +296,10 @@ void ConfigurationValueTest::floatingPointScientific() {
     {
         float a = 2.1e7f;
         std::string value{
-            #ifndef __MINGW32__
-            "2.1e+07"
-            #else
+            #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
             "2.1e+007"
+            #else
+            "2.1e+07"
             #endif
         };
 
@@ -313,17 +313,17 @@ void ConfigurationValueTest::floatingPointScientific() {
     } {
         float a = 2.1e+7f;
         std::string value{
-            #ifndef __MINGW32__
-            "2.1e+07"
-            #else
+            #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
             "2.1e+007"
+            #else
+            "2.1e+07"
             #endif
         };
         std::string valueSci{
-            #ifndef __MINGW32__
-            "2.100000e+07"
-            #else
+            #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
             "2.100000e+007"
+            #else
+            "2.100000e+07"
             #endif
         };
 
@@ -340,10 +340,10 @@ void ConfigurationValueTest::floatingPointScientific() {
     } {
         float a = -2.1e7f;
         std::string value{
-            #ifndef __MINGW32__
-            "-2.1e+07"
-            #else
+            #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
             "-2.1e+007"
+            #else
+            "-2.1e+07"
             #endif
         };
 
@@ -356,10 +356,10 @@ void ConfigurationValueTest::floatingPointScientific() {
     } {
         float a = 2.1e-7f;
         std::string value{
-            #ifndef __MINGW32__
-            "2.1e-07"
-            #else
+            #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
             "2.1e-007"
+            #else
+            "2.1e-07"
             #endif
         };
 
@@ -372,17 +372,17 @@ void ConfigurationValueTest::floatingPointScientific() {
     } {
         float a = 2.1E7f;
         std::string value{
-            #ifndef __MINGW32__
-            "2.1E+07"
-            #else
+            #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
             "2.1E+007"
+            #else
+            "2.1E+07"
             #endif
         };
         std::string valueSci{
-            #ifndef __MINGW32__
-            "2.100000E+07"
-            #else
+            #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
             "2.100000E+007"
+            #else
+            "2.100000E+07"
             #endif
         };
 

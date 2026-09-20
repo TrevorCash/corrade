@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -108,9 +108,12 @@ void BitAlgorithmsTest::copyMasked() {
     Containers::StridedArrayView1D<std::uint64_t> dst = dstData;
     Containers::StridedArrayView1D<const std::uint64_t> expected = expectedData;
 
-    if(data.flipSrc) src = src.flipped<0>();
-    if(data.flipDst) dst = dst.flipped<0>();
-    if(data.flipExpected) expected = expected.flipped<0>();
+    if(data.flipSrc)
+        src = src.flipped<0>();
+    if(data.flipDst)
+        dst = dst.flipped<0>();
+    if(data.flipExpected)
+        expected = expected.flipped<0>();
 
     Containers::BitArray srcMask{ValueInit, src.size()};
     if(data.flipMask) {
@@ -217,7 +220,8 @@ void BitAlgorithmsTest::copyMaskedNotContiguous() {
 CORRADE_NEVER_INLINE void copyMaskedNaive(Containers::ArrayView<const std::size_t> src, Containers::BitArrayView srcMask, Containers::ArrayView<std::size_t> dst) {
     std::size_t offset = 0;
     for(std::size_t i = 0; i != src.size(); ++i) {
-        if(!srcMask[i]) continue;
+        if(!srcMask[i])
+            continue;
         dst[offset++] = src[i];
     }
 }

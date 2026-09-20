@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -131,6 +131,15 @@ class StringIterable;
 class StringIterableIterator;
 
 template<class, class, class> class Triple;
+
+namespace Implementation {
+    /* StringView needs these but without including ArrayView so they have to
+       be here due to the default argument that's optionally used for SFINAE
+       (such as in ArrayViewStl, to allow derived types) */
+    template<class, class, class = void> struct ArrayViewConverter;
+    template<std::size_t, class, class, class = void> struct StaticArrayViewConverter;
+    template<class, class = void> struct ErasedStaticArrayViewConverter;
+}
 
 }}
 #endif

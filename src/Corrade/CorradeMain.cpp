@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -63,7 +63,7 @@ Containers::Array<char*> convertWideArgv(std::size_t argc, wchar_t** wargv, Cont
     }
 
     /* Allocate the argument array, make the relative offsets absolute */
-    storage = Containers::Array<char>{totalSize};
+    storage = Containers::Array<char>{NoInit, totalSize};
     for(std::size_t i = 0; i != argv.size(); ++i)
         /* Was `argv[i] += reinterpret_cast<std::ptrdiff_t>(storage.data());`
            originally, but that makes UBSan complain about "applying non-zero
@@ -79,8 +79,20 @@ Containers::Array<char*> convertWideArgv(std::size_t argc, wchar_t** wargv, Cont
 
 }
 
-extern "C" int main(int, char**);
+/* This used to be extern "C" like the others below but as of GCC 15 and Clang
+   20 it produces a -Wpedantic / -Wmain warning:
+    https://gcc.gnu.org/cgit/gcc/commit/?id=292fc21a8d7aa2f16e61ac941e22ada6ddd85500
+    https://github.com/llvm/llvm-project/issues/101512
+   Because on the other side (and in CORRADE_TEST_MAIN() and
+   MAGNUM_APPLICATION_MAIN()) the definitions are without extern "C" and it
+   always worked well that way, I assume it was redundant, and the compiler
+   forces it to have a C linkage, even if wmain / wWinMain is the actually used
+   entrypoint. */
+int main(int, char**);
 
+/* This symbol isn't compiled when building CorradeMainConsole under MinGW. See
+   src/Corrade/CMakeLists.txt for a lengthy explanation. */
+#ifndef CORRADE_MINGW_BUILD_MAIN_CONSOLE_ONLY
 /* extern "C" needed for MinGW -- https://sourceforge.net/p/mingw-w64/wiki2/Unicode%20apps/ */
 extern "C" int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int);
 extern "C" int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
@@ -99,7 +111,11 @@ extern "C" int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     #pragma GCC diagnostic pop
     #endif
 }
+#endif
 
+/* This symbol isn't compiled when building CorradeMainWindows under MinGW. See
+   src/Corrade/CMakeLists.txt for a lengthy explanation. */
+#ifndef CORRADE_MINGW_BUILD_MAIN_WINDOWS_ONLY
 extern "C" int wmain(int, wchar_t**);
 extern "C" int wmain(int argc, wchar_t** wargv) {
     /* Set output to UTF-8 */
@@ -143,6 +159,7 @@ extern "C" int wmain(int argc, wchar_t** wargv) {
     #pragma GCC diagnostic pop
     #endif
 }
+#endif
 #else
 #error this file is needed only on Windows
 #endif

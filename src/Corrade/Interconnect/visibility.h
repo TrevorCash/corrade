@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -27,7 +27,12 @@
 */
 
 #include "Corrade/configure.h"
+
+#ifdef CORRADE_BUILD_DEPRECATED
+#include "Corrade/Interconnect/Interconnect.h" /* for file deprecation warning */
 #include "Corrade/Utility/VisibilityMacros.h"
+
+/* File deprecation warning printed in Interconnect.h */
 
 #ifndef DOXYGEN_GENERATING_OUTPUT
 #ifndef CORRADE_BUILD_STATIC
@@ -43,6 +48,9 @@
 #else
 #define CORRADE_INTERCONNECT_EXPORT
 #define CORRADE_INTERCONNECT_LOCAL
+#endif
+#else
+#error the Interconnect library is broken by design and thus obsolete
 #endif
 
 #endif

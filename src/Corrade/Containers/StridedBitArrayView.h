@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -53,7 +53,7 @@ namespace Implementation {
         return reinterpret_cast<T*&>(view._data);
     }
 
-    #ifndef CORRADE_NO_DEBUG_ASSERT
+    #if defined(CORRADE_TARGET_32BIT) && !defined(CORRADE_NO_DEBUG_ASSERT)
     template<unsigned dimensions> constexpr bool isSizeSmallEnoughForBitArrayView(const Size<dimensions>&, Sequence<>) {
         return true;
     }
@@ -63,8 +63,14 @@ namespace Implementation {
     #endif
 
     template<std::size_t first, std::size_t ...next> constexpr Size<1 + sizeof...(next)> sizeWithOffset(const Size<1 + sizeof...(next)>& size, std::size_t offset, Implementation::Sequence<first, next...>) {
-        return CORRADE_CONSTEXPR_DEBUG_ASSERT(isSizeSmallEnoughForBitArrayView(size, Implementation::Sequence<first, next...>{}),
-            "Containers::StridedBitArrayView: size expected to be smaller than 2^" << Utility::Debug::nospace << (sizeof(std::size_t)*8 - 3) << "bits, got" << size),
+        return
+            #ifdef CORRADE_TARGET_32BIT
+            /* It makes little sense to test for this on 64-bit, if 64-bit code
+               happens to go over then it's got bigger problems than this
+               assert */
+            CORRADE_CONSTEXPR_DEBUG_ASSERT(isSizeSmallEnoughForBitArrayView(size, Implementation::Sequence<first, next...>{}),
+                "Containers::StridedBitArrayView: size expected to be smaller than 2^" << Utility::Debug::nospace << (sizeof(std::size_t)*8 - 3) << "bits, got" << size),
+            #endif
             Size<1 + sizeof...(next)>{(size[first] << 3)|offset, (size[next] << 3)...};
     }
 
@@ -422,6 +428,19 @@ template<unsigned dimensions, class T> class BasicStridedBitArrayView {
         void set(std::size_t i) const;
 
         /**
+         * @brief Use @ref set(std::size_t, bool) const to set a single bit to a concrete value
+         *
+         * Deleted to avoid accidental use of @ref set(std::size_t) const with
+         * a @cpp bool @ce. Unlike with @ref BasicBitArrayView "BitArrayView",
+         * there's currently no way to set or reset all bits.
+         */
+        #ifdef DOXYGEN_GENERATING_OUTPUT
+        void set(bool) const = delete;
+        #else
+        template<class U, class V = T, typename std::enable_if<std::is_same<U, bool>::value && !std::is_const<V>::value && dimensions == 1, int>::type = 0> void set(U) const = delete;
+        #endif
+
+        /**
          * @brief Set a bit at given position
          *
          * Expects that @p i is less than @ref size(). Enabled only on a
@@ -448,6 +467,20 @@ template<unsigned dimensions, class T> class BasicStridedBitArrayView {
         template<class U = T, typename std::enable_if<!std::is_const<U>::value && dimensions == 1, int>::type = 0>
         #endif
         void reset(std::size_t i) const;
+
+        /**
+         * @brief Use @ref set(std::size_t, bool) const to set a single bit to a concrete value
+         *
+         * Deleted to avoid accidental use of @ref reset(std::size_t) const
+         * with a @cpp bool @ce. Unlike with
+         * @ref BasicBitArrayView "BitArrayView", there's currently no way to
+         * set or reset all bits.
+         */
+        #ifdef DOXYGEN_GENERATING_OUTPUT
+        void reset(bool) const = delete;
+        #else
+        template<class U, class V = T, typename std::enable_if<std::is_same<U, bool>::value && !std::is_const<V>::value && dimensions == 1, int>::type = 0> void reset(U) const = delete;
+        #endif
 
         /**
          * @brief Reset a bit at given position
@@ -919,7 +952,8 @@ template<unsigned dimensions> Utility::Debug& operator<<(Utility::Debug& debug, 
     debug << "{" << Utility::Debug::nospace;
 
     for(std::size_t i = 0, iMax = value.size()[0]; i != iMax; ++i) {
-        if(i) debug << ",";
+        if(i)
+            debug << ",";
         debug << value[i] << Utility::Debug::nospace;
     }
 
@@ -1141,7 +1175,7 @@ template<unsigned dimensions, class T> template<class U, typename std::enable_if
        this particular case we're saving back to a signed value so no crazy
        overflow like with `data + i*stride` should happen? */
     const std::ptrdiff_t offsetInBits = (_sizeOffset._data[0] & 0x07) + std::ptrdiff_t(i)*_stride._data[0];
-    /* http://graphics.stanford.edu/~seander/bithacks.html#ConditionalSetOrClearBitsWithoutBranching */
+    /* https://graphics.stanford.edu/~seander/bithacks.html#ConditionalSetOrClearBitsWithoutBranching */
     char& byte = static_cast<T*>(_data)[offsetInBits >> 3];
     byte ^= (-char(value) ^ byte) & (1 << (offsetInBits & 0x07));
 }
@@ -1157,7 +1191,7 @@ template<unsigned dimensions, class T> template<class U, typename std::enable_if
         offsetInBits += std::ptrdiff_t(i._data[j])*_stride._data[j];
     }
 
-    /* http://graphics.stanford.edu/~seander/bithacks.html#ConditionalSetOrClearBitsWithoutBranching */
+    /* https://graphics.stanford.edu/~seander/bithacks.html#ConditionalSetOrClearBitsWithoutBranching */
     char& byte = static_cast<T*>(_data)[offsetInBits >> 3];
     byte ^= (-char(value) ^ byte) & (1 << (offsetInBits & 0x07));
 }

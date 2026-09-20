@@ -22,6 +22,8 @@
     `#define CORRADE_ARRAYVIEW_STL_SPAN_COMPATIBILITY` before including the
     file. Including it multiple times with different macros defined works too.
 
+    v2020.06-1890-g77f9f (2025-04-11)
+    -   Further cleanup and unification of SFINAE code, no functional change
     v2020.06-1846-gc4cdf (2025-01-07)
     -   Added arraySize() overload for arrays as struct members
     -   Structured bindings of const types now work even w/o <utility>
@@ -108,8 +110,12 @@
    CorradeGrowableArray.h uses the STL detection macros to decide on
    CORRADE_NO_STD_IS_TRIVIALLY_TRAITS, so just doing the whole check
    unconditionally */
-#if CORRADE_CXX_STANDARD >= 202002
-#include <version>
+#if CORRADE_CXX_STANDARD >= 201703 && defined(__has_include)
+    #if __has_include(<version>)
+    #include <version>
+    #else
+    #include <ciso646>
+    #endif
 #else
 #include <ciso646>
 #endif

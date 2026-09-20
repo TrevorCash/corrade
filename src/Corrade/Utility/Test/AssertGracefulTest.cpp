@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -96,8 +96,15 @@ void AssertGracefulTest::test() {
     [&](){ TESTED_ASSERT_OUTPUT(foo(), "foo() should succeed", ); }();
     int c = [&](){ TESTED_ASSERT_OUTPUT(foo(), "foo() should succeed!", 7); return 3; }();
 
-    [&](){ if(c != 3) TESTED_ASSERT_UNREACHABLE("C should be 3", ); }();
-    int d = [&](){ if(a) TESTED_ASSERT_UNREACHABLE("C should be 3!", 7); return 3; }();
+    [&](){
+        if(c != 3)
+            TESTED_ASSERT_UNREACHABLE("C should be 3", );
+    }();
+    int d = [&](){
+        if(a)
+            TESTED_ASSERT_UNREACHABLE("C should be 3!", 7);
+        return 3;
+    }();
 
     /* CORRADE_INTERNAL_[DEBUG_]ASSERT(),
        CORRADE_INTERNAL_[DEBUG_]ASSERT_OUTPUT(),

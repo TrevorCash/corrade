@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -24,6 +24,7 @@
     DEALINGS IN THE SOFTWARE.
 */
 
+#include <cstdlib> /* std::getenv() */
 #include <algorithm> /* std::find_if() */
 #include <vector>
 
@@ -284,7 +285,8 @@ ArgumentsTest::ArgumentsTest() {
 }
 
 bool hasEnv(const std::string& value) {
-    if(std::getenv(value.data())) return true;
+    if(std::getenv(value.data()))
+        return true;
 
     std::vector<std::string> list = Arguments::environment();
     return std::find_if(list.begin(), list.end(),
@@ -1463,12 +1465,12 @@ void ArgumentsTest::prefixedParse() {
     CORRADE_COMPARE(arg1.prefix(), "");
     CORRADE_COMPARE(arg2.prefix(), "read");
 
-    CORRADE_VERIFY(arg1.tryParse(data.argv.size(), data.argv));
+    CORRADE_VERIFY(arg1.tryParse(data.argv.size(), data.argv.data()));
     CORRADE_VERIFY(arg1.isSet("binary"));
     CORRADE_COMPARE(arg1.value("speed"), "fast");
     CORRADE_COMPARE(arg1.value("file"), "file.dat");
 
-    CORRADE_VERIFY(arg2.tryParse(data.argv.size(), data.argv));
+    CORRADE_VERIFY(arg2.tryParse(data.argv.size(), data.argv.data()));
     CORRADE_COMPARE(arg2.value("behavior"), "buffered");
     CORRADE_COMPARE(arg2.value("buffer-size"), "4K");
     CORRADE_COMPARE(arg2.arrayValueCount("seek"), 2);
@@ -1852,7 +1854,8 @@ void ArgumentsTest::parseErrorCallbackIgnoreAll() {
             #endif
             switch(error) {
                 case Arguments::ParseError::InvalidShortArgument:
-                    if(key == "?") CORRADE_COMPARE(key, "?");
+                    if(key == "?")
+                        CORRADE_COMPARE(key, "?");
                     else CORRADE_COMPARE(key, "help");
                     return true;
                 case Arguments::ParseError::InvalidArgument:

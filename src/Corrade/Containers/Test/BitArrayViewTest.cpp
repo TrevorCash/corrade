@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -477,6 +477,12 @@ void BitArrayViewTest::accessMutableSet() {
     b.set(data.bit, true);
     CORRADE_COMPARE(valueA[1], data.expectedSet);
     CORRADE_COMPARE(valueB[1], data.expectedSet);
+
+    /* These should not compile, use setAll() / resetAll() instead */
+    #if 0
+    a.set(true);
+    b.set(false);
+    #endif
 }
 
 void BitArrayViewTest::accessMutableReset() {
@@ -492,6 +498,12 @@ void BitArrayViewTest::accessMutableReset() {
     b.set(data.bit, false);
     CORRADE_COMPARE(valueA[1], data.expectedReset);
     CORRADE_COMPARE(valueB[1], data.expectedReset);
+
+    /* These should not compile, use setAll() / resetAll() instead */
+    #if 0
+    a.reset(true);
+    b.reset(false);
+    #endif
 }
 
 void BitArrayViewTest::accessMutableSetAll() {
@@ -840,7 +852,8 @@ void BitArrayViewTest::countBitPattern()  {
     std::uint8_t bitsShifted[4*8];
     for(std::size_t i = 0; i != 4; ++i) {
         std::uint64_t shifted = (bits[i + 1] << shift);
-        if(shift) shifted |= bits[i] >> (64 - shift);
+        if(shift)
+            shifted |= bits[i] >> (64 - shift);
         for(std::size_t j = 0; j != 8; ++j)
             bitsShifted[i*8 + j] = (shifted >> j*8) & 0xff;
     }
@@ -867,16 +880,19 @@ void BitArrayViewTest::countBitPattern()  {
     /* Verify that we have the shift correct with the naive counting first */
     std::size_t naiveCount = 0;
     for(std::size_t i = 0; i != size; ++i) {
-        if(view[i]) ++naiveCount;
+        if(view[i])
+            ++naiveCount;
     }
 
     /* Set to 1 to generate data for the above table */
     #if 0
     if(shift == 0) {
         Debug d{Debug::Flag::NoNewlineAtTheEnd};
-        if(naiveCount < 10) d << " " << Debug::nospace;
+        if(naiveCount < 10)
+            d << " " << Debug::nospace;
         d << naiveCount << Debug::nospace << ",";
-        if(size % 16 == 0 || size == 187) d << Debug::newline;
+        if(size % 16 == 0 || size == 187)
+            d << Debug::newline;
         else d << Debug::space;
     }
     #else

@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -61,7 +61,8 @@ The usage would then be straightforward:
 */
 template<class T, typename std::underlying_type<T>::type fullValue> Utility::Debug& enumSetDebugOutput(Utility::Debug& debug, EnumSet<T, fullValue> value, const char* empty, std::initializer_list<T> enums) {
     /* Print the empty value in case there is nothing */
-    if(!value) return debug << empty;
+    if(!value)
+        return debug << empty;
 
     /* The enum values should get printed with the same flags, so make all
        immediate flags temporarily global -- except NoSpace, unless it's also
@@ -72,7 +73,8 @@ template<class T, typename std::underlying_type<T>::type fullValue> Utility::Deb
     /* Print known values, if set, and strip them out of the value */
     bool separate = false;
     for(const T e: enums) if(value >= e) {
-        if(separate) debug << Utility::Debug::nospace << "|" << Utility::Debug::nospace;
+        if(separate)
+            debug << Utility::Debug::nospace << "|" << Utility::Debug::nospace;
         else separate = true;
         debug << e;
 
@@ -83,7 +85,8 @@ template<class T, typename std::underlying_type<T>::type fullValue> Utility::Deb
     /* If there are leftovers, pass them to the original debug operator and
        expect it will print them as a raw value */
     if(value) {
-        if(separate) debug << Utility::Debug::nospace << "|" << Utility::Debug::nospace;
+        if(separate)
+            debug << Utility::Debug::nospace << "|" << Utility::Debug::nospace;
         debug << T(typename std::underlying_type<T>::type(value));
     }
 

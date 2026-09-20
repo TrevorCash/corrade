@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -91,7 +91,9 @@ struct StaticArrayViewTest: TestSuite::Tester {
     void constructZeroNullPointerAmbiguity();
 
     void convertBool();
+    #ifdef CORRADE_BUILD_DEPRECATED
     void convertPointer();
+    #endif
     void convertConst();
     void convertExternalView();
     void convertConstFromExternalView();
@@ -128,7 +130,9 @@ StaticArrayViewTest::StaticArrayViewTest() {
               &StaticArrayViewTest::constructZeroNullPointerAmbiguity,
 
               &StaticArrayViewTest::convertBool,
+              #ifdef CORRADE_BUILD_DEPRECATED
               &StaticArrayViewTest::convertPointer,
+              #endif
               &StaticArrayViewTest::convertConst,
               &StaticArrayViewTest::convertExternalView,
               &StaticArrayViewTest::convertConstFromExternalView,
@@ -151,8 +155,8 @@ StaticArrayViewTest::StaticArrayViewTest() {
 void StaticArrayViewTest::constructDefault() {
     StaticArrayView<5> a;
     StaticArrayView<5> b = nullptr;
-    CORRADE_VERIFY(a == nullptr);
-    CORRADE_VERIFY(b == nullptr);
+    CORRADE_COMPARE(a.data(), nullptr);
+    CORRADE_COMPARE(b.data(), nullptr);
     CORRADE_VERIFY(!a.isEmpty());
     CORRADE_VERIFY(!b.isEmpty());
     CORRADE_COMPARE(a.size(), StaticArrayView<5>::Size);
@@ -168,8 +172,8 @@ void StaticArrayViewTest::constructDefault() {
     constexpr bool emptyB = cb.isEmpty();
     constexpr std::size_t sizeA = ca.size();
     constexpr std::size_t sizeB = cb.size();
-    CORRADE_VERIFY(dataA == nullptr);
-    CORRADE_VERIFY(dataB == nullptr);
+    CORRADE_COMPARE(dataA, nullptr);
+    CORRADE_COMPARE(dataB, nullptr);
     CORRADE_VERIFY(!emptyA);
     CORRADE_VERIFY(!emptyB);
     CORRADE_COMPARE(sizeA, StaticArrayView<5>::Size);
@@ -188,28 +192,28 @@ void StaticArrayViewTest::construct() {
 
     {
         const StaticArrayView<5> b{a};
-        CORRADE_VERIFY(b == a);
+        CORRADE_COMPARE(b.data(), &a[0]);
     } {
         auto b = staticArrayView<5>(a);
         CORRADE_VERIFY(std::is_same<decltype(b), StaticArrayView<5>>::value);
-        CORRADE_VERIFY(b == a);
+        CORRADE_COMPARE(b.data(), &a[0]);
 
         auto c = staticArrayView(b);
         CORRADE_VERIFY(std::is_same<decltype(c), StaticArrayView<5>>::value);
-        CORRADE_VERIFY(c == a);
+        CORRADE_COMPARE(c.data(), &a[0]);
     }
 
     {
         constexpr ConstStaticArrayView<5> b{Array30};
-        CORRADE_VERIFY(b == Array30);
+        CORRADE_COMPARE(b.data(), &Array30[0]);
     } {
         constexpr auto b = staticArrayView<5>(Array30);
         CORRADE_VERIFY(std::is_same<decltype(b), const ConstStaticArrayView<5>>::value);
-        CORRADE_VERIFY(b == Array30);
+        CORRADE_COMPARE(b.data(), &Array30[0]);
 
         constexpr auto c = staticArrayView(b);
         CORRADE_VERIFY(std::is_same<decltype(c), const ConstStaticArrayView<5>>::value);
-        CORRADE_VERIFY(c == Array30);
+        CORRADE_COMPARE(c.data(), &Array30[0]);
     }
 
     CORRADE_VERIFY(std::is_nothrow_constructible<StaticArrayView<5>, int*>::value);
@@ -225,20 +229,20 @@ void StaticArrayViewTest::constructFixedSize() {
 
     {
         StaticArrayView<13> b = a;
-        CORRADE_VERIFY(b == a);
+        CORRADE_COMPARE(b.data(), &a[0]);
     } {
         auto b = staticArrayView(a);
         CORRADE_VERIFY(std::is_same<decltype(b), StaticArrayView<13>>::value);
-        CORRADE_VERIFY(b == a);
+        CORRADE_COMPARE(b.data(), &a[0]);
     }
 
     {
         constexpr ConstStaticArrayView<13> b = Array13;
-        CORRADE_VERIFY(b == Array13);
+        CORRADE_COMPARE(b.data(), &Array13[0]);
     } {
         constexpr auto b = staticArrayView(Array13);
         CORRADE_VERIFY(std::is_same<decltype(b), const ConstStaticArrayView<13>>::value);
-        CORRADE_VERIFY(b == Array13);
+        CORRADE_COMPARE(b.data(), &Array13[0]);
     }
 
     CORRADE_VERIFY(std::is_nothrow_constructible<StaticArrayView<15>, int[15]>::value);
@@ -268,8 +272,8 @@ void StaticArrayViewTest::constructDerived() {
     Containers::StaticArrayView<5, Base> a{b};
     Containers::StaticArrayView<5, Base> av{bv};
 
-    CORRADE_VERIFY(a == &b[0]);
-    CORRADE_VERIFY(av == &b[0]);
+    CORRADE_COMPARE(a.data(), &b[0]);
+    CORRADE_COMPARE(av.data(), &b[0]);
 
     constexpr Containers::StaticArrayView<5, const Derived> cbv{DerivedArray};
     #ifndef CORRADE_MSVC2015_COMPATIBILITY
@@ -281,8 +285,8 @@ void StaticArrayViewTest::constructDerived() {
     #endif
     Containers::StaticArrayView<5, const Base> cav{cbv};
 
-    CORRADE_VERIFY(ca == &DerivedArray[0]);
-    CORRADE_VERIFY(cav == &DerivedArray[0]);
+    CORRADE_COMPARE(ca.data(), &DerivedArray[0]);
+    CORRADE_COMPARE(cav.data(), &DerivedArray[0]);
 
     CORRADE_VERIFY(std::is_nothrow_constructible<Containers::StaticArrayView<5, Base>, Derived[5]>::value);
     CORRADE_VERIFY(std::is_nothrow_constructible<Containers::StaticArrayView<5, Base>, Containers::StaticArrayView<5, Derived>>::value);
@@ -350,31 +354,41 @@ void StaticArrayViewTest::convertBool() {
     CORRADE_VERIFY(!std::is_constructible<int, StaticArrayView<5>>::value);
 }
 
+#ifdef CORRADE_BUILD_DEPRECATED
 void StaticArrayViewTest::convertPointer() {
     int a[7];
     StaticArrayView<7> b = a;
+    CORRADE_IGNORE_DEPRECATED_PUSH
     int* bp = b;
+    CORRADE_IGNORE_DEPRECATED_POP
     CORRADE_COMPARE(bp, static_cast<int*>(a));
 
     const StaticArrayView<7> c = a;
+    CORRADE_IGNORE_DEPRECATED_PUSH
     const int* cp = c;
+    CORRADE_IGNORE_DEPRECATED_POP
     CORRADE_COMPARE(cp, static_cast<const int*>(a));
 
     constexpr ConstStaticArrayView<13> cc = Array13;
+    CORRADE_IGNORE_DEPRECATED_PUSH
     constexpr const int* ccp = cc;
+    CORRADE_IGNORE_DEPRECATED_POP
     CORRADE_COMPARE(ccp, static_cast<const int*>(Array13));
 
     /* Pointer arithmetic */
     const StaticArrayView<7> e = a;
+    CORRADE_IGNORE_DEPRECATED_PUSH
     const int* ep = e + 2;
+    CORRADE_IGNORE_DEPRECATED_POP
     CORRADE_COMPARE(ep, &e[2]);
 }
+#endif
 
 void StaticArrayViewTest::convertConst() {
     int a[3];
     StaticArrayView<3> b = a;
     ConstArrayView c = b;
-    CORRADE_VERIFY(c == a);
+    CORRADE_COMPARE(c.data(), a);
 }
 
 void StaticArrayViewTest::convertExternalView() {
@@ -436,6 +450,11 @@ void StaticArrayViewTest::convertConstFromExternalView() {
     CORRADE_VERIFY(std::is_constructible<Containers::StaticArrayView<5, const int>, IntView5>::value);
     CORRADE_VERIFY(!std::is_constructible<Containers::StaticArrayView<6, const int>, IntView5>::value);
     CORRADE_VERIFY(!std::is_constructible<Containers::StaticArrayView<5, const float>, IntView5>::value);
+
+    /* Creating a non-const view from a const type should not be possible. Not
+       using is_convertible to catch also accidental explicit conversions. */
+    CORRADE_VERIFY(std::is_constructible<Containers::StaticArrayView<5, const int>, ConstIntView5>::value);
+    CORRADE_VERIFY(!std::is_constructible<Containers::StaticArrayView<5, int>, ConstIntView5>::value);
 }
 
 void StaticArrayViewTest::convertToConstExternalView() {
@@ -465,7 +484,7 @@ void StaticArrayViewTest::access() {
     for(std::size_t i = 0; i != 7; ++i)
         b[i] = i;
 
-    CORRADE_VERIFY(b.data() == a);
+    CORRADE_COMPARE(b.data(), &a[0]);
     CORRADE_COMPARE(b.size(), 7);
     CORRADE_COMPARE(b.front(), 0);
     CORRADE_COMPARE(b.back(), 6);
@@ -496,7 +515,7 @@ void StaticArrayViewTest::access() {
         #if defined(CORRADE_TARGET_CLANG) && defined(_CORRADE_ASAN_ENABLED) && __clang_major__ == 14
         CORRADE_EXPECT_FAIL("Clang 14 with AddressSanitizer enabled seems to make a copy of the referenced array in this case, but not in case of begin() and end() below.");
         #endif
-        CORRADE_VERIFY(data == OneToSeven);
+        CORRADE_COMPARE(data, OneToSeven);
     }
 
     constexpr std::size_t size = cb.size();
@@ -748,7 +767,7 @@ void StaticArrayViewTest::sliceToStaticPointer() {
     int data[5] = {1, 2, 3, 4, 5};
     StaticArrayView<5> a = data;
 
-    StaticArrayView<3> b = a.slice<3>(a + 1);
+    StaticArrayView<3> b = a.slice<3>(a.data() + 1);
     CORRADE_COMPARE(b[0], 2);
     CORRADE_COMPARE(b[1], 3);
     CORRADE_COMPARE(b[2], 4);
@@ -757,7 +776,7 @@ void StaticArrayViewTest::sliceToStaticPointer() {
        pointer arithmetic on _data inside the assert. */
     #ifndef CORRADE_MSVC2015_COMPATIBILITY
     constexpr ConstStaticArrayView<5> ca = Array5;
-    constexpr ConstStaticArrayView<3> cb = ca.slice<3>(ca + 1);
+    constexpr ConstStaticArrayView<3> cb = ca.slice<3>(ca.data() + 1);
     CORRADE_COMPARE(cb[0], 2);
     CORRADE_COMPARE(cb[1], 3);
     CORRADE_COMPARE(cb[2], 4);

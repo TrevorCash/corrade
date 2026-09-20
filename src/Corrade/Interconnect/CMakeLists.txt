@@ -2,7 +2,7 @@
 #   This file is part of Corrade.
 #
 #   Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-#               2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+#               2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
 #             Vladimír Vondruš <mosra@centrum.cz>
 #
 #   Permission is hereby granted, free of charge, to any person obtaining a
@@ -24,12 +24,15 @@
 #   DEALINGS IN THE SOFTWARE.
 #
 
+if(NOT CORRADE_BUILD_DEPRECATED)
+    message(SEND_ERROR "The Interconnect library is deprecated. Either remove CORRADE_WITH_INTERCONNECT from your options or rebuild Corrade with CORRADE_BUILD_DEPRECATED enabled to keep using the library.")
+endif()
+
 # IDE folder in VS, Xcode etc. CMake 3.12+, older versions have only the FOLDER
 # property that would have to be set on each target separately.
 set(CMAKE_FOLDER "Corrade/Interconnect")
 
 set(CorradeInterconnect_SRCS
-    Connection.cpp
     Emitter.cpp
     Receiver.cpp)
 

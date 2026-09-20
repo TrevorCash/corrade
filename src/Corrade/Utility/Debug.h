@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -368,8 +368,8 @@ class CORRADE_UTILITY_EXPORT Debug {
         /**
          * @brief Output a newline
          *
-         * Puts a newline (not surrounded by spaces) to the output. The
-         * following two lines are equivalent:
+         * Puts a newline (not surrounded by spaces) to the output and flushes
+         * it. The following two lines are equivalent:
          *
          * @snippet Utility.cpp Debug-newline
          *
@@ -382,9 +382,7 @@ class CORRADE_UTILITY_EXPORT Debug {
          *
          * @see @ref nospace
          */
-        static void newline(Debug& debug) {
-            debug << nospace << "\n" << nospace;
-        }
+        static void newline(Debug& debug);
 
         /**
          * @brief Output a space
@@ -606,14 +604,14 @@ class CORRADE_UTILITY_EXPORT Debug {
         Debug(const Debug&) = delete;
 
         /** @brief Move constructor */
-        Debug(Debug&&) = default;
+        Debug(Debug&& other) noexcept;
 
         /**
          * @brief Destructor
          *
          * Resets the output redirection back to the output of enclosing scope.
-         * If there was any output, adds newline at the end. Also resets output
-         * color modifier, if there was any.
+         * If there was any output, adds newline at the end and flushes the
+         * output. Also resets output color modifier, if there was any.
          * @see @ref resetColor()
          */
         ~Debug();
@@ -669,6 +667,12 @@ class CORRADE_UTILITY_EXPORT Debug {
          *      @ref operator<<(Debug&, const T&)
          */
         Debug& operator<<(const char* value);
+
+        /**
+         * @overload
+         * @m_since_latest
+         */
+        Debug& operator<<(char* value);
 
         /**
          * @overload
@@ -1044,7 +1048,7 @@ class CORRADE_UTILITY_EXPORT Warning: public Debug {
         Warning(const Warning&) = delete;
 
         /** @brief Move constructor */
-        Warning(Warning&&) = default;
+        Warning(Warning&&) noexcept = default;
 
         /**
          * @brief Destructor
@@ -1152,7 +1156,7 @@ class CORRADE_UTILITY_EXPORT Error: public Debug {
         Error(const Error&) = delete;
 
         /** @brief Move constructor */
-        Error(Error&&) = default;
+        Error(Error&&) noexcept = default;
 
         /**
          * @brief Destructor
@@ -1254,7 +1258,7 @@ class CORRADE_UTILITY_EXPORT Fatal: public Error {
          * Exits the application with exit code specified in constructor.
          */
         #ifndef CORRADE_MSVC2015_COMPATIBILITY
-        /* http://stackoverflow.com/questions/38378693/did-visual-studio-2015-update-3-break-constructor-attributes */
+        /* https://stackoverflow.com/questions/38378693/did-visual-studio-2015-update-3-break-constructor-attributes */
         [[noreturn]]
         #endif
         ~Fatal();

@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -405,8 +405,13 @@ BasicStringView {
             CORRADE_CONSTEXPR_DEBUG_ASSERT(size < std::size_t{1} << (sizeof(std::size_t)*8 - 2),
                 "Containers::StringView: string expected to be smaller than 2^" << Utility::Debug::nospace << sizeof(std::size_t)*8 - 2 << "bytes, got" << size),
             #endif
-            CORRADE_CONSTEXPR_DEBUG_ASSERT(data || !(flags & StringViewFlag::NullTerminated),
-                "Containers::StringView: can't use StringViewFlag::NullTerminated with null data"),
+            /* This *may* cause a potential OOB access if the string is not
+               actually null-terminated, OTOH not checking for this would just
+               defer the problem to a point where it'd cause something a lot
+               nastier. Same check (although not debug-only) is in the String
+               data + size + deleter constructor. */
+            CORRADE_CONSTEXPR_DEBUG_ASSERT(!(flags & StringViewFlag::NullTerminated) || (data && !data[size]),
+                "Containers::StringView:" << StringViewFlag::NullTerminated << "expects non-null null-terminated data"),
             size|(std::size_t(flags) & Implementation::StringViewSizeMask))} {}
 
         /**
@@ -431,7 +436,16 @@ BasicStringView {
          */
         template<class U = T
             #ifndef DOXYGEN_GENERATING_OUTPUT
-            , typename std::enable_if<std::is_const<U>::value, int>::type = 0
+            /* typename std::enable_if<std::is_const<U>::value, int>::type = 0
+               cannot be used because GCC and Clang then have different
+               mangling for the deinlined specialization in StringView.cpp,
+               which means Corrade built with GCC cannot be used with Clang and
+               vice versa. With GCC-built Corrade, Clang wants to link to
+                _ZN7Corrade10Containers15BasicStringViewIKcEC1IS2_TnNSt9enable_ifIXsr3std8
+               which c++filt cannot even demangle, the other way GCC wants
+                Corrade::Containers::BasicStringView<char const>::BasicStringView<char const, 0>(Corrade::Containers::String const&)
+               which Clang doesn't export. */
+            , class = typename std::enable_if<std::is_const<U>::value>::type
             #endif
         > /*implicit*/ BasicStringView(const String& data) noexcept;
 
@@ -460,7 +474,19 @@ BasicStringView {
            convertible to an ArrayView), because those should be picking the T*
            overload and rely on strlen(), consistently with how C string
            literals work; and disallowing construction from a StringView
-           because it'd get preferred over the implicit copy constructor. */
+           because it'd get preferred over the implicit copy constructor.
+
+           Note that on GCC 16, the `decltype(ArrayView<T>{...})` below causes
+           a -Wsfinae-incomplete warning to be fired for the ArrayView
+           definition if ArrayView.h is included after StringView.h.
+           Unfortunately I couldn't figure out a different way that would work
+           (std::is_convertible or is_constructible both require ArrayView to
+           be defined), and including ArrayView.h here just to fix one stupid
+           warning that nobody asked for on a single compiler seems like an
+           overkill. Furthermore, it's not enough to add a warning suppression
+           here, it has to be done on the ArrayView definition, which makes
+           things rather nasty. I DID NOT ASK FOR ANY OF THIS, DO YOU HEAR ME,
+           GCC?! */
         /** @todo even though the implicit copy constructor would be overriden
             without the is_same part, is_trivially_copyable still says yes?! */
         template<class U, class = typename std::enable_if<!std::is_array<typename std::remove_reference<U&&>::type>::value && !std::is_same<typename std::decay<U&&>::type, BasicStringView<T>>::value && !std::is_same<typename std::decay<U&&>::type, std::nullptr_t>::value, decltype(ArrayView<T>{std::declval<U&&>()})>::type> constexpr /*implicit*/ BasicStringView(U&& data, StringViewFlags flags = {}) noexcept: BasicStringView{flags, ArrayView<T>(data)} {}
@@ -598,7 +624,7 @@ BasicStringView {
          * @brief First byte
          *
          * Expects there is at least one byte.
-         * @see @ref begin(), @ref operator[]()
+         * @see @ref isEmpty(), @ref begin(), @ref operator[]()
          */
         constexpr T& front() const;
 
@@ -606,7 +632,7 @@ BasicStringView {
          * @brief Last byte
          *
          * Expects there is at least one byte.
-         * @see @ref end(), @ref operator[]()
+         * @see @ref isEmpty(), @ref end(), @ref operator[]()
          */
         constexpr T& back() const;
 
@@ -834,7 +860,8 @@ BasicStringView {
          * @brief Split on whitespace, removing empty parts
          *
          * Equivalent to calling @ref splitOnAnyWithoutEmptyParts(StringView) const
-         * with @cpp " \t\f\v\r\n" @ce passed to @p delimiters.
+         * with @cpp " \t\f\v\r\n" @ce passed to @p delimiters. This is the
+         * same set of characters as recognized by @m_class{m-doc-external} [std::isspace()](https://en.cppreference.com/cpp/string/byte/isspace).
          */
         Array<BasicStringView<T>> splitOnWhitespaceWithoutEmptyParts() const;
 
@@ -1037,7 +1064,8 @@ BasicStringView {
          * @brief View with whitespace trimmed from prefix and suffix
          *
          * Equivalent to calling @ref trimmed(StringView) const with
-         * @cpp " \t\f\v\r\n" @ce passed to @p characters.
+         * @cpp " \t\f\v\r\n" @ce passed to @p characters. This is the same set
+         * of characters as recognized by @m_class{m-doc-external} [std::isspace()](https://en.cppreference.com/cpp/string/byte/isspace).
          * @see @ref trimmedPrefix() const, @ref trimmedSuffix() const
          */
         BasicStringView<T> trimmed() const;
@@ -1058,7 +1086,8 @@ BasicStringView {
          * @brief View with whitespace trimmed from prefix
          *
          * Equivalent to calling @ref trimmedPrefix(StringView) const with
-         * @cpp " \t\f\v\r\n" @ce passed to @p characters.
+         * @cpp " \t\f\v\r\n" @ce passed to @p characters. This is the same set
+         * of characters as recognized by @m_class{m-doc-external} [std::isspace()](https://en.cppreference.com/cpp/string/byte/isspace).
          * @see @ref trimmed() const, @ref trimmedSuffix() const
          */
         BasicStringView<T> trimmedPrefix() const;
@@ -1079,7 +1108,8 @@ BasicStringView {
          * @brief View with whitespace trimmed from suffix
          *
          * Equivalent to calling @ref trimmedSuffix(StringView) const with
-         * @cpp " \t\f\v\r\n" @ce passed to @p characters.
+         * @cpp " \t\f\v\r\n" @ce passed to @p characters. This is the same set
+         * of characters as recognized by @m_class{m-doc-external} [std::isspace()](https://en.cppreference.com/cpp/string/byte/isspace).
          * @see @ref trimmed() const, @ref trimmedPrefix() const
          */
         BasicStringView<T> trimmedSuffix() const;
@@ -1473,10 +1503,11 @@ namespace Literals {
    load-bearing in any other contexts. Clang 17+ adds an off-by-default warning
    for this; GCC 4.8 however *requires* the space there, so until GCC 4.8
    support is dropped, we suppress this warning instead of removing the
-   space. */
-#if defined(CORRADE_TARGET_CLANG) && __clang_major__ >= 17
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-literal-operator"
+   space. GCC 15 now has the same warning but it's enabled by default on
+   -std=c++23. */
+#if (defined(CORRADE_TARGET_CLANG) && __clang_major__ >= 17) || (defined(CORRADE_TARGET_GCC) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 15)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-literal-operator"
 #endif
 /** @relatesalso Corrade::Containers::BasicStringView
 @brief String view literal
@@ -1491,8 +1522,8 @@ constexpr StringView operator"" _s(const char* data, std::size_t size) {
     /* Using plain bit ops instead of EnumSet to speed up debug builds */
     return StringView{data, size, StringViewFlag(std::size_t(StringViewFlag::Global)|std::size_t(StringViewFlag::NullTerminated))};
 }
-#if defined(CORRADE_TARGET_CLANG) && __clang_major__ >= 17
-#pragma clang diagnostic pop
+#if (defined(CORRADE_TARGET_CLANG) && __clang_major__ >= 17) || (defined(CORRADE_TARGET_GCC) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 15)
+#pragma GCC diagnostic pop
 #endif
 
 }}
@@ -1661,7 +1692,6 @@ template<class T> inline std::size_t BasicStringView<T>::count(const char charac
 #ifndef CORRADE_SINGLES_NO_ADVANCED_STRING_APIS
 namespace Implementation {
 
-template<class, class> struct ArrayViewConverter;
 template<class> struct ErasedArrayViewConverter;
 
 /* Strangely enough, if the from() functions don't accept T& but just T, it

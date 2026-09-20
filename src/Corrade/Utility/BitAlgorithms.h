@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -79,10 +79,10 @@ template<class T> void copyMasked(const Containers::StridedArrayView1D<const T>&
 namespace Implementation {
 
 /* Adapted from Algorithms.h and restricted to 1D strided array views */
-template<class T, class View = decltype(Containers::Implementation::ErasedArrayViewConverter<typename std::remove_reference<T&&>::type>::from(std::declval<T&&>()))> static Containers::StridedArrayView1D<typename View::Type> stridedArrayView1DTypeFor(T&&);
-template<class T> static Containers::StridedArrayView1D<T> stridedArrayView1DTypeFor(const Containers::ArrayView<T>&);
-template<std::size_t size, class T> static Containers::StridedArrayView1D<T> stridedArrayView1DTypeFor(T(&)[size]);
-template<class T> static Containers::StridedArrayView1D<T> stridedArrayView1DTypeFor(const Containers::StridedArrayView1D<T>&);
+template<class T, class View = decltype(Containers::Implementation::ErasedArrayViewConverter<typename std::remove_reference<T&&>::type>::from(std::declval<T&&>()))> Containers::StridedArrayView1D<typename View::Type> stridedArrayView1DTypeFor(T&&);
+template<class T> Containers::StridedArrayView1D<T> stridedArrayView1DTypeFor(const Containers::ArrayView<T>&);
+template<std::size_t size, class T> Containers::StridedArrayView1D<T> stridedArrayView1DTypeFor(T(&)[size]);
+template<class T> Containers::StridedArrayView1D<T> stridedArrayView1DTypeFor(const Containers::StridedArrayView1D<T>&);
 
 }
 

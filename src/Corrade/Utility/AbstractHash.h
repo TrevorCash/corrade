@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -76,7 +76,8 @@ template<std::size_t size> class HashDigest {
         /** @brief Equality operator */
         bool operator==(const HashDigest<size>& other) const {
             for(int i = 0; i != size; ++i)
-                if(other._digest[i] != _digest[i]) return false;
+                if(other._digest[i] != _digest[i])
+                    return false;
             return true;
         }
 
@@ -123,7 +124,8 @@ template<std::size_t size> inline Debug& operator<<(Debug& debug, const HashDige
 
 template<std::size_t size> HashDigest<size> HashDigest<size>::fromHexString(std::string digest) {
     HashDigest<size> d;
-    if(digest.size() != size*2) return d;
+    if(digest.size() != size*2)
+        return d;
 
     for(int i = 0; i != size*2; ++i) {
         if(digest[i] >= '0' && digest[i] <= '9')

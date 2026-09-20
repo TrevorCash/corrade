@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -24,6 +24,8 @@
     DEALINGS IN THE SOFTWARE.
 */
 
+#define _CORRADE_NO_DEPRECATED_INTERCONNECT
+
 #include "EmitterLibrary.h"
 
 namespace Corrade { namespace Interconnect { namespace Test {
@@ -36,8 +38,10 @@ void EmitterLibrary::fireNonInlineThroughAFunction() {
     fireNonInline();
 }
 
+CORRADE_IGNORE_DEPRECATED_PUSH
 auto EmitterLibrary::fireNonInline() -> Signal {
     return emit(&EmitterLibrary::fireNonInline);
 }
+CORRADE_IGNORE_DEPRECATED_POP
 
 }}}

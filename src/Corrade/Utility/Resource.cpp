@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -135,7 +135,8 @@ void Resource::unregisterData(Implementation::ResourceGroup& resource) {
 namespace {
     Implementation::ResourceGroup* findGroup(const Containers::StringView name) {
         for(Implementation::ResourceGroup* group = resourceGlobals.groups; group; group = Containers::Implementation::forwardListNext(*group)) {
-            if(group->name == name) return group;
+            if(group->name == name)
+                return group;
         }
 
         return nullptr;
@@ -224,7 +225,8 @@ Containers::StringView Resource::getString(const Containers::StringView filename
         const std::vector<const ConfigurationGroup*> files = _overrideGroup->conf.groups("file");
         for(const ConfigurationGroup* const file: files) {
             const Containers::StringView name = file->hasValue("alias") ? file->value<Containers::StringView>("alias") : file->value<Containers::StringView>("filename");
-            if(name != filename) continue;
+            if(name != filename)
+                continue;
 
             /* Load the file */
             Containers::Optional<Containers::String> data = Path::readString(Path::join(Path::path(_overrideGroup->conf.filename()), file->value("filename")));

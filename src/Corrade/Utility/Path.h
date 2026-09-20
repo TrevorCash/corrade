@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -72,15 +72,17 @@ class MapDeleter;
 @brief Convert path from native separators
 @m_since_latest
 
-On Windows converts backward slashes to forward slashes, on all other platforms
-returns the input argument untouched.
+On Windows (and on @ref CORRADE_TARGET_EMSCRIPTEN "Emscripten" if running under
+Node.js on Windows) converts backward slashes to forward slashes, on all other
+platforms returns the input argument untouched.
 
-On Windows the argument and return type is @ref Containers::String and the
-operation is performed in-place if @p path is owned, transferring the data
-ownership to the returned instance. Makes a owned copy first if not. On other
-platforms it's a @ref Containers::StringView that simply gets passed through.
+On Windows and Emscripten the argument and return type is
+@ref Containers::String and the operation is performed in-place if @p path is
+owned, transferring the data ownership to the returned instance. Makes a owned
+copy first if not. On other platforms it's a @ref Containers::StringView that
+simply gets passed through.
 */
-#if defined(CORRADE_TARGET_WINDOWS) || defined(DOXYGEN_GENERATING_OUTPUT)
+#if defined(CORRADE_TARGET_WINDOWS) || defined(CORRADE_TARGET_EMSCRIPTEN) || defined(DOXYGEN_GENERATING_OUTPUT)
 CORRADE_UTILITY_EXPORT Containers::String fromNativeSeparators(Containers::String path);
 #else
 CORRADE_UTILITY_EXPORT Containers::StringView fromNativeSeparators(Containers::StringView path);
@@ -90,15 +92,17 @@ CORRADE_UTILITY_EXPORT Containers::StringView fromNativeSeparators(Containers::S
 @brief Convert path to native separators
 @m_since_latest
 
-On Windows converts forward slashes to backward slashes, on all other platforms
-returns the input argument untouched.
+On Windows (and on @ref CORRADE_TARGET_EMSCRIPTEN "Emscripten" if running under
+Node.js on Windows) converts forward slashes to backward slashes, on all other
+platforms returns the input argument untouched.
 
-On Windows the argument and return type is @ref Containers::String and the
-operation is performed in-place if @p path is owned, transferring the data
-ownership to the returned instance. Makes a owned copy first if not. On other
-platforms it's a @ref Containers::StringView that simply gets passed through.
+On Windows and Emscripten the argument and return type is
+@ref Containers::String and the operation is performed in-place if @p path is
+owned, transferring the data ownership to the returned instance. Makes a owned
+copy first if not. On other platforms it's a @ref Containers::StringView that
+simply gets passed through.
 */
-#if defined(CORRADE_TARGET_WINDOWS) || defined(DOXYGEN_GENERATING_OUTPUT)
+#if defined(CORRADE_TARGET_WINDOWS) || defined(CORRADE_TARGET_EMSCRIPTEN) || defined(DOXYGEN_GENERATING_OUTPUT)
 CORRADE_UTILITY_EXPORT Containers::String toNativeSeparators(Containers::String path);
 #else
 CORRADE_UTILITY_EXPORT Containers::StringView toNativeSeparators(Containers::StringView path);
@@ -177,10 +181,11 @@ CORRADE_UTILITY_EXPORT Containers::Pair<Containers::StringView, Containers::Stri
 @brief Join path and filename
 @m_since_latest
 
-If the @p path is empty or the @p filename is absolute (with a leading slash or
-a drive letter on Windows), returns @p filename. Otherwise joins them together
-with a forward slash, unless present in @p path already. Behavior is equivalent
-to @m_class{m-doc-external} [os.path.split()](https://docs.python.org/3/library/os.path.html#os.path.split).
+If the @p path is empty or the @p filename is absolute (with a leading slash, or
+a drive letter on Windows or on @ref CORRADE_TARGET_EMSCRIPTEN "Emscripten" if
+running under Node.js on Windows), returns @p filename. Otherwise joins them
+together with a forward slash, unless present in @p path already. Behavior is
+equivalent to @m_class{m-doc-external} [os.path.split()](https://docs.python.org/3/library/os.path.html#os.path.split).
 For example:
 
 -   @cpp {"path/to", "file"} @ce results in @cpp "path/to/file" @ce
@@ -397,8 +402,9 @@ CORRADE_UTILITY_EXPORT Containers::Optional<Containers::String> libraryLocation(
 @m_since_latest
 
 Returns location of the executable on Linux, Windows, non-sandboxed and
-sandboxed macOS and iOS. On other systems or if the directory can't be found,
-prints a message to @ref Error and returns @ref Containers::NullOpt.
+sandboxed macOS and iOS. On other systems on on Linux if `/proc/self/exe` is
+inaccessible, prints a message to @ref Error and returns
+@ref Containers::NullOpt.
 
 Returned value is encoded in UTF-8, on Windows it's first converted from a
 UTF-16 representation using @ref Unicode::narrow().
@@ -445,6 +451,11 @@ Windows the directory is equivalent to @cb{.bat} %USERPROFILE%/Documents @ce
 or similar. On other systems or if the directory can't be found, prints a
 message to @ref Error and returns @ref Containers::NullOpt.
 
+Note that, depending on platform, the function may return a location that
+doesn't actually exist without indicating a failure, such as when
+@cb{.sh} ${HOME} @ce points to a location on a volume that isn't currently
+mounted.
+
 Returned value is encoded in UTF-8, on Windows it's first converted from a
 UTF-16 representation using @ref Unicode::narrow().
 @note For consistency is the path returned with forward slashes on all
@@ -465,6 +476,13 @@ On Unix (except for macOS), the configuration dir is
 configuration dir is @cb{.sh} ${HOME}/Library/Application Support/name @ce. On
 other systems or if the directory can't be found, prints a message to
 @ref Error and returns @ref Containers::NullOpt.
+
+The function *doesn't* create the configuration directory if it doesn't exist,
+so in case given @p name is used for the first time, you may need to call
+@ref Path::make() on the returned path. Also note that, depending on platform,
+the function may return a location under a path that doesn't actually exist
+without indicating a failure, such as when @cb{.sh} ${XDG_CONFIG_HOME} @ce
+points to a location on a volume that isn't currently mounted.
 
 Returned value is encoded in UTF-8, on Windows it's first converted from a
 UTF-16 representation using @ref Unicode::narrow().

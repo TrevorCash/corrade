@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -50,7 +50,14 @@ enum: std::size_t {
         #endif
 };
 
+/** @todo remove once uses in GrowableArray.h and Utility/Memory.h are gone */
+#ifdef CORRADE_BUILD_DEPRECATED
 template<class T, typename std::enable_if<
+    /* Unlike with Array, where is_trivial is used instead of
+       is_trivially_constructible to work around issues on libstdc++ before
+       version 8, here such a case wouldn't compile anyway because it'd pick
+       the below overload which *needs* the default constructor to work anyway,
+       so it's less of a problem */
     #ifdef CORRADE_NO_STD_IS_TRIVIALLY_TRAITS
     __has_trivial_constructor(T)
     #else
@@ -61,6 +68,10 @@ template<class T, typename std::enable_if<
 }
 
 template<class T, typename std::enable_if<!
+    /* Unlike with Array, where is_trivial is used instead of
+       is_trivially_constructible to work around issues on libstdc++ before
+       version 8, here such a case wouldn't compile anyway because it *needs*
+       the default constructor to work anyway, so it's less of a problem */
     #ifdef CORRADE_NO_STD_IS_TRIVIALLY_TRAITS
     __has_trivial_constructor(T)
     #else
@@ -69,20 +80,32 @@ template<class T, typename std::enable_if<!
 , int>::type = 0> inline void arrayConstruct(Corrade::DefaultInitT, T* begin, T* const end) {
     /* Needs to be < because sometimes begin > end. No {}, we want trivial
        types non-initialized */
-    for(; begin < end; ++begin) new(begin) T;
+    for(; begin < end; ++begin)
+        new(begin) T;
 }
+#endif
 
 template<class T, typename std::enable_if<
+    /* Unlike with Array, where is_trivial is used instead of
+       is_trivially_constructible to work around issues on libstdc++ before
+       version 8, here such a case wouldn't compile anyway because it'd pick
+       the below overload which *needs* the default constructor to work anyway,
+       so it's less of a problem */
     #ifdef CORRADE_NO_STD_IS_TRIVIALLY_TRAITS
     __has_trivial_constructor(T)
     #else
     std::is_trivially_constructible<T>::value
     #endif
 , int>::type = 0> inline void arrayConstruct(Corrade::ValueInitT, T* const begin, T* const end) {
-    if(begin < end) std::memset(begin, 0, (end - begin)*sizeof(T));
+    if(begin < end)
+        std::memset(begin, 0, (end - begin)*sizeof(T));
 }
 
 template<class T, typename std::enable_if<!
+    /* Unlike with Array, where is_trivial is used instead of
+       is_trivially_constructible to work around issues on libstdc++ before
+       version 8, here such a case wouldn't compile anyway because it *needs*
+       the default constructor to work anyway, so it's less of a problem */
     #ifdef CORRADE_NO_STD_IS_TRIVIALLY_TRAITS
     __has_trivial_constructor(T)
     #else
@@ -93,7 +116,8 @@ template<class T, typename std::enable_if<!
        around a featurebug in C++ where new T{} doesn't work for an explicit
        defaulted constructor. For details see constructHelpers.h and
        GrowableArrayTest::constructorExplicitInCopyInitialization(). */
-    for(; begin < end; ++begin) new(begin) T();
+    for(; begin < end; ++begin)
+        new(begin) T();
 }
 
 }}}

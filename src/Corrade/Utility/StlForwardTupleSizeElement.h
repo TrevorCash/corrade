@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
     Copyright © 2022 Stanislaw Halik <sthalik@misaki.pl>
 
@@ -62,6 +62,9 @@ guaranteed to contain those in order to define them for @ref std::pair.
     _STD_BEGIN
 #endif
 
+/* Note that while the <utility> include *seems* to be inside a STL namespace,
+   it's not -- either the STL namespace is defined with forward declarations
+   inside, or there's no namespace at all and <utility> is included instead */
 /** @todo the include is indented to work around acme.py extracting it to the
     top, fix properly */
 #if defined(CORRADE_TARGET_LIBCXX) || defined(CORRADE_TARGET_LIBSTDCXX) || defined(CORRADE_TARGET_DINKUMWARE)

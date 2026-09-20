@@ -23,6 +23,8 @@
     `#define CORRADE_UTILITY_EXPORT` as appropriate. To enable the IFUNC
     functionality, `#define CORRADE_CPU_USE_IFUNC` before including the file.
 
+    v2020.06-1890-g77f9f (2025-04-11)
+    -   Include guard for the implementation part to prevent double definitions
     v2020.06-1846-gc4cdf (2025-01-07)
     -   SFINAE is now done in template args as that's simpler for the compiler
     -   Fixed warnings on ARM with C++20
@@ -100,7 +102,17 @@
 #define CORRADE_UTILITY_EXPORT
 #endif
 #include "Corrade/Cpu.h"
-#ifdef CORRADE_CPU_IMPLEMENTATION
+/* The extra guard has to be here to prevent double definitions in cases like
+
+    #define CORRADE_CPU_IMPLEMENTATION
+    #include <CorradeCpu.hpp>
+    #include <CorradeString.hpp>
+
+   where CorradeString.hpp contains `#include <CorradeCpu.hpp>` again. Note
+   that even the stb_* libs don't handle this -- including them twice with the
+   implementation macro defined *will* lead to double definitions. */
+#if defined(CORRADE_CPU_IMPLEMENTATION) && !defined(CorradeCpu_hpp_implementation)
+#define CorradeCpu_hpp_implementation
 // {{includes}}
 #include "Corrade/Cpu.cpp"
 #endif

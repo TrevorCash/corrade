@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -161,9 +161,9 @@ achieve the same compact formatting without passing the array as a whole.
 While the streaming nature of the writer doesn't allow to add new values to
 multiple places in the file, this can be achieved by populating multiple
 @ref JsonWriter instances and then combining their formatted output together
-using @ref writeJson(). The following snippet first creates standalone glTF
-node and mesh arrays and then combines them together to a complete glTF file,
-with each node having exactly one assigned mesh:
+using @ref writeJson(Containers::StringView). The following snippet first
+creates standalone glTF node and mesh arrays and then combines them together to
+a complete glTF file, with each node having exactly one assigned mesh:
 
 @snippet Utility.cpp JsonWriter-usage-combining-writers
 
@@ -173,6 +173,28 @@ surroundings in the final file. The @ref currentArraySize() index is used to
 know the ID of the currently added mesh instead of having to increment a
 counter by hand, and finally @ref isEmpty() is used to know whether there's any
 meshes at all, in which case the list is completely omitted in the final file.
+
+@section Utility-JsonWriter-tokens Writing raw JSON token data
+
+With the above-mentioned @ref writeJson(Containers::StringView) as well as
+@ref writeJsonKey(Containers::StringView) it's possible to write raw JSON token
+data such as string, number or object literals directly to the output without
+having to parse them first.
+
+Combined with the @ref Json class, which performs JSON tokenization and
+parsing, @ref writeJson(JsonToken) can then write contents of a JSON token and
+its children. This can be used for example to pretty-print a minified JSON file
+or to extract parts of a larger JSON file:
+
+@snippet Utility.cpp JsonWriter-tokens
+
+<b></b>
+
+@m_class{m-note m-success}
+
+@par
+    See the @ref json-pretty-printer example for a self-contained executable
+    making use of this functionality.
 */
 class CORRADE_UTILITY_EXPORT JsonWriter {
     public:
@@ -568,7 +590,8 @@ class CORRADE_UTILITY_EXPORT JsonWriter {
         #else
         JsonWriter& write(unsigned long long value);
         JsonWriter& write(unsigned long value) {
-            /* Hey, C and C++, your types *and* your typedefs are stupid! */
+            /* Hey, C and C++, your types *and* your typedefs are stupid!
+               Similar shit has to be done in JsonTokenData as well. */
             return write(static_cast<typename std::conditional<sizeof(unsigned long) == 8, unsigned long long, unsigned int>::type>(value));
         }
         #endif
@@ -590,7 +613,8 @@ class CORRADE_UTILITY_EXPORT JsonWriter {
         #else
         JsonWriter& write(long long value);
         JsonWriter& write(long value) {
-            /* Hey, C and C++, your types *and* your typedefs are stupid! */
+            /* Hey, C and C++, your types *and* your typedefs are stupid!
+               Similar shit has to be done in JsonTokenData as well. */
             return write(static_cast<typename std::conditional<sizeof(long) == 8, long long, int>::type>(value));
         }
         #endif
@@ -603,12 +627,14 @@ class CORRADE_UTILITY_EXPORT JsonWriter {
          * by `,` if there's another value before, with spacing and indentation
          * as appropriate. Expected to not be called after the top-level JSON
          * value was closed and not when an object key is expected --- use
-         * @ref writeKey() in that case instead. The string is expected to be
-         * in UTF-8 but its validity isn't checked. Only the `"`, `\`, bell
-         * (@cpp '\b' @ce), form feed (@cpp '\f' @ce), newline (@cpp '\n' @ce),
-         * tab (@cpp '\t' @ce) and carriage return (@cpp '\r' @ce) values are
-         * escaped, the `/` character and UTF-8 bytes are written verbatim
-         * without escaping.
+         * @ref writeKey() in that case instead. Enforcing a dedicated function
+         * for writing keys prevents accidents when a key was accidentally
+         * missed and a subsequent string value gets mistakenly treated as a
+         * key. The string is expected to be in UTF-8 but its validity isn't
+         * checked. Only the `"`, `\`, bell (@cpp '\b' @ce), form feed (
+         * @cpp '\f' @ce), newline (@cpp '\n' @ce), tab (@cpp '\t' @ce) and
+         * carriage return (@cpp '\r' @ce) values are escaped, the `/`
+         * character and UTF-8 bytes are written verbatim without escaping.
          * @see @ref writeArray(const Containers::StringIterable&, std::uint32_t)
          */
         JsonWriter& write(Containers::StringView value);
@@ -734,15 +760,52 @@ class CORRADE_UTILITY_EXPORT JsonWriter {
          * @brief Write a raw JSON string
          * @return Reference to self (for method chaining)
          *
-         * The string is expected to be non-empty and a valid and closed JSON
+         * The string is assumed to be non-empty and a valid and closed JSON
          * value, i.e., a null, bool numeric or a string literal, a complete
          * object or a complete array, but its validity isn't checked.
          * Internally it's treated as writing a single value, separated by `,`
          * if there's another value before, with outside spacing and
          * indentation as appropriate, but no spacing or indentation performed
-         * inside the string.
+         * inside the string. Expected to not be called after the top-level
+         * JSON value was closed and, similarly as with the distinction of
+         * @ref write(Containers::StringView) vs
+         * @ref writeKey(Containers::StringView), not when an object key is
+         * expected --- use @ref writeJsonKey() in that case instead.
          */
         JsonWriter& writeJson(Containers::StringView json);
+
+        /**
+         * @brief Write a raw JSON string as an object key
+         * @return Reference to self (for method chaining)
+         *
+         * The string is assumed to be a valid and complete JSON string literal
+         * but its validity isn't checked. Internally it's treated as writing a
+         * single key, separated by `,` if there's another value before,
+         * followed by a `:`, with spacing and indentation as appropriate.
+         * Expected to be called only inside an object scope either at the
+         * beginning or after a value for the previous key was written.
+         * @see @ref writeJson(Containers::StringView)
+         */
+        JsonWriter& writeJsonKey(Containers::StringView json);
+
+        /**
+         * @brief Write a JSON token contents
+         * @return Reference to self (for method chaining)
+         *
+         * Equivalent to iterating the @ref JsonToken contents and writing them
+         * one by one as appropriate. Expected to not be called after the
+         * top-level JSON value was closed and not when an object key is
+         * expected, the token is also expected to not be an object key.
+         *
+         * Tokens that are parsed are passed to @ref write() / @ref writeKey(),
+         * unparsed tokens have @ref JsonToken::data() passed to
+         * @ref writeJson() / @ref writeJsonKey(). Objects and arrays are
+         * always passed to @ref beginObject(), @ref endObject(),
+         * @ref beginArray() and @ref endArray() and the function recurses on
+         * their contents. In other words, even if they're not parsed, their
+         * contents are iterated and not written verbatim.
+         */
+        JsonWriter& writeJson(JsonToken json);
 
         /**
          * @brief Get the result as a string

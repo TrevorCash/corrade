@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -55,7 +55,9 @@ struct StridedBitArrayViewTest: TestSuite::Tester {
     void constructSizeOnlyArray();
 
     void constructOffsetTooLarge();
+    #ifdef CORRADE_TARGET_32BIT
     void constructSizeTooLarge();
+    #endif
     void constructViewTooSmall();
     void constructBeginOffsetTooSmall();
 
@@ -79,7 +81,9 @@ struct StridedBitArrayViewTest: TestSuite::Tester {
     void construct3DOneSizeZero();
 
     /* No construct3DOffsetTooLarge(), it's no different from the 1D case */
+    #ifdef CORRADE_TARGET_32BIT
     void construct3DSizeTooLarge();
+    #endif
     void construct3DViewTooSmall();
     /* No construct3DBeginTooSmall(), it's no different from the 1D case */
 
@@ -298,7 +302,9 @@ StridedBitArrayViewTest::StridedBitArrayViewTest() {
               &StridedBitArrayViewTest::constructSizeOnlyArray,
 
               &StridedBitArrayViewTest::constructOffsetTooLarge,
+              #ifdef CORRADE_TARGET_32BIT
               &StridedBitArrayViewTest::constructSizeTooLarge,
+              #endif
               &StridedBitArrayViewTest::constructViewTooSmall,
               &StridedBitArrayViewTest::constructBeginOffsetTooSmall,
 
@@ -326,7 +332,9 @@ StridedBitArrayViewTest::StridedBitArrayViewTest() {
               &StridedBitArrayViewTest::construct3DSizeOnlyConstexpr,
               &StridedBitArrayViewTest::construct3DOneSizeZero,
 
+              #ifdef CORRADE_TARGET_32BIT
               &StridedBitArrayViewTest::construct3DSizeTooLarge,
+              #endif
               &StridedBitArrayViewTest::construct3DViewTooSmall,
 
               &StridedBitArrayViewTest::construct3DFromView,
@@ -729,6 +737,7 @@ void StridedBitArrayViewTest::constructOffsetTooLarge() {
         "Containers::StridedBitArrayView: offset expected to be smaller than 8 bits, got 8\n");
 }
 
+#ifdef CORRADE_TARGET_32BIT
 void StridedBitArrayViewTest::constructSizeTooLarge() {
     CORRADE_SKIP_IF_NO_DEBUG_ASSERT();
 
@@ -737,14 +746,10 @@ void StridedBitArrayViewTest::constructSizeTooLarge() {
     /* Creating a view with zero stride, otherwise this would get caught by
        other asserts already */
     StridedBitArrayView1D{BitArrayView{nullptr, 0, 1}, std::size_t{1} << (sizeof(std::size_t)*8 - 3), 0};
-    #ifndef CORRADE_TARGET_32BIT
-    CORRADE_COMPARE(out,
-        "Containers::StridedBitArrayView: size expected to be smaller than 2^61 bits, got {2305843009213693952}\n");
-    #else
     CORRADE_COMPARE(out,
         "Containers::StridedBitArrayView: size expected to be smaller than 2^29 bits, got {536870912}\n");
-    #endif
 }
+#endif
 
 void StridedBitArrayViewTest::constructViewTooSmall() {
     CORRADE_SKIP_IF_NO_ASSERT();
@@ -1132,6 +1137,7 @@ void StridedBitArrayViewTest::construct3DOneSizeZero() {
     CORRADE_COMPARE(a.data(), &data[0]);
 }
 
+#ifdef CORRADE_TARGET_32BIT
 void StridedBitArrayViewTest::construct3DSizeTooLarge() {
     CORRADE_SKIP_IF_NO_DEBUG_ASSERT();
 
@@ -1141,12 +1147,9 @@ void StridedBitArrayViewTest::construct3DSizeTooLarge() {
        other asserts already */
     StridedBitArrayView3D{BitArrayView{nullptr, 0, 1}, {1,
         std::size_t{1} << (sizeof(std::size_t)*8 - 3), 1}, {1, 0, 1}};
-    #ifndef CORRADE_TARGET_32BIT
-    CORRADE_COMPARE(out, "Containers::StridedBitArrayView: size expected to be smaller than 2^61 bits, got {1, 2305843009213693952, 1}\n");
-    #else
     CORRADE_COMPARE(out, "Containers::StridedBitArrayView: size expected to be smaller than 2^29 bits, got {1, 536870912, 1}\n");
-    #endif
 }
+#endif
 
 void StridedBitArrayViewTest::construct3DViewTooSmall() {
     CORRADE_SKIP_IF_NO_ASSERT();
@@ -1379,6 +1382,12 @@ void StridedBitArrayViewTest::accessMutableSet() {
     b.set(data.bit, true);
     CORRADE_COMPARE(valueA[1], data.expectedSet);
     CORRADE_COMPARE(valueB[1], data.expectedSet);
+
+    /* These should not compile, use setAll() / resetAll() instead */
+    #if 0
+    a.set(true);
+    b.set(false);
+    #endif
 }
 
 void StridedBitArrayViewTest::accessMutableReset() {
@@ -1396,6 +1405,12 @@ void StridedBitArrayViewTest::accessMutableReset() {
     b.set(data.bit, false);
     CORRADE_COMPARE(valueA[1], data.expectedReset);
     CORRADE_COMPARE(valueB[1], data.expectedReset);
+
+    /* These should not compile, use setAll() / resetAll() instead */
+    #if 0
+    a.reset(true);
+    b.reset(false);
+    #endif
 }
 
 void StridedBitArrayViewTest::accessZeroStride() {
@@ -2392,9 +2407,9 @@ void StridedBitArrayViewTest::flipped() {
     CORRADE_VERIFY(!b[0]);
 
     /* Flipping twice results in the same thing */
-    CORRADE_VERIFY(a.flipped<0>().flipped<0>().data() == a.data());
-    CORRADE_VERIFY(a.flipped<0>().flipped<0>().offset() == a.offset());
-    CORRADE_VERIFY(a.flipped<0>().flipped<0>().stride() == a.stride());
+    CORRADE_COMPARE(a.flipped<0>().flipped<0>().data(), a.data());
+    CORRADE_COMPARE(a.flipped<0>().flipped<0>().offset(), a.offset());
+    CORRADE_COMPARE(a.flipped<0>().flipped<0>().stride(), a.stride());
 }
 
 void StridedBitArrayViewTest::flippedZeroSize() {

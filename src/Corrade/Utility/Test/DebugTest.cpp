@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -39,6 +39,7 @@
 #include "Corrade/Utility/FormatStl.h" /** @todo remove once Debug is fully stream-free */
 
 #ifndef CORRADE_TARGET_EMSCRIPTEN
+#include <functional> /* std::ref() */
 #include <thread>
 #endif
 
@@ -51,6 +52,7 @@ struct DebugTest: TestSuite::Tester {
 
     void debug();
     void string();
+    void stringEmpty();
     /** @todo once we get rid of iostreams, move this and other STL stuff to
         dedicated DebugStlTest */
     void stringStl();
@@ -98,6 +100,8 @@ struct DebugTest: TestSuite::Tester {
 
     void scopedOutput();
 
+    void move();
+
     void stringOutput();
     void stringOutputNonEmpty();
     void stringOutputNonEmptySmall();
@@ -106,6 +110,7 @@ struct DebugTest: TestSuite::Tester {
     void stringOutputReuseCleared();
     void stringOutputReuseModified();
     void stringOutputReuseModifiedUnsynced();
+    void stringOutputMove();
 
     void debugColor();
     void debugFlag();
@@ -124,6 +129,7 @@ DebugTest::DebugTest() {
 
         &DebugTest::debug,
         &DebugTest::string,
+        &DebugTest::stringEmpty,
         &DebugTest::stringStl,
         &DebugTest::boolean,
         &DebugTest::ints<unsigned char>,
@@ -182,6 +188,8 @@ DebugTest::DebugTest() {
 
         &DebugTest::scopedOutput,
 
+        &DebugTest::move,
+
         &DebugTest::stringOutput,
         &DebugTest::stringOutputNonEmpty,
         &DebugTest::stringOutputNonEmptySmall,
@@ -190,6 +198,7 @@ DebugTest::DebugTest() {
         &DebugTest::stringOutputReuseCleared,
         &DebugTest::stringOutputReuseModified,
         &DebugTest::stringOutputReuseModifiedUnsynced,
+        &DebugTest::stringOutputMove,
 
         &DebugTest::debugColor,
         &DebugTest::debugFlag,
@@ -237,6 +246,29 @@ void DebugTest::string() {
     std::ostringstream out;
     Debug{&out} << "hello\0world,"_s << Containers::String{"very\0well!"_s} << Containers::MutableStringView{a};
     CORRADE_COMPARE(out.str(), (std::string{"hello\0world, very\0well! mutable\n", 32}));
+}
+
+void DebugTest::stringEmpty() {
+    using namespace Containers::Literals;
+
+    /* All these should result in nothing being printed, but the separating
+       spaces should still be there. Null char pointers and null views should
+       be treated as empty strings as well. */
+    std::ostringstream out;
+    Debug{&out}
+        /* A null-terminated empty const char array */
+        << ""_s << "0"
+        /* A null-terminated empty const char array */
+        << Containers::String{} << "1"
+        /* A non-null-terminated empty const char array */
+        << Containers::StringView{"a", 0} << "2"
+        /* Zero-size arrays */
+        << Containers::StringView{nullptr, 0} << "3"
+        << Containers::MutableStringView{nullptr, 0} << "4"
+        /* Null pointers */
+        << static_cast<const char*>(nullptr) << "5"
+        << static_cast<char*>(nullptr) << "6";
+    CORRADE_COMPARE(out.str(), " 0  1  2  3  4  5  6\n");
 }
 
 void DebugTest::stringStl() {
@@ -314,34 +346,34 @@ template<class> struct FloatsData;
 template<> struct FloatsData<float> {
     static const char* name() { return "float"; }
     static const char* expected() {
-        #ifndef __MINGW32__
-        return "3.14159 -12345.7 1.23457e-12 3.14159\n";
-        #else
+        #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
         return "3.14159 -12345.7 1.23457e-012 3.14159\n";
+        #else
+        return "3.14159 -12345.7 1.23457e-12 3.14159\n";
         #endif
     }
 };
 template<> struct FloatsData<double> {
     static const char* name() { return "double"; }
     static const char* expected() {
-        #ifndef __MINGW32__
-        return "3.14159265358979 -12345.6789012346 1.23456789012346e-12 3.14159\n";
-        #else
+        #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
         return "3.14159265358979 -12345.6789012346 1.23456789012346e-012 3.14159\n";
+        #else
+        return "3.14159265358979 -12345.6789012346 1.23456789012346e-12 3.14159\n";
         #endif
     }
 };
 template<> struct FloatsData<long double> {
     static const char* name() { return "long double"; }
     static const char* expected() {
-        #ifndef __MINGW32__
+        #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
+        return "3.14159265358979324 -12345.6789012345679 1.23456789012345679e-012 3.14159\n";
+        #else
         #ifndef CORRADE_LONG_DOUBLE_SAME_AS_DOUBLE
         return "3.14159265358979324 -12345.6789012345679 1.23456789012345679e-12 3.14159\n";
         #else
         return "3.14159265358979 -12345.6789012346 1.23456789012346e-12 3.14159\n";
         #endif
-        #else
-        return "3.14159265358979324 -12345.6789012345679 1.23456789012345679e-012 3.14159\n";
         #endif
     }
 };
@@ -764,6 +796,13 @@ void DebugTest::colorsScoped() {
 
             Debug{&out} << "This should be cyan again.";
 
+            {
+                Debug a{&out};
+                a << Debug::color(Debug::Color::Yellow) << "This is yellow,";
+                Debug b = Utility::move(a);
+                b << "and the move-constructed instance should still correctly reset to cyan.";
+            }
+
             Debug{&out, Debug::Flag::DisableColors} << "Disabling colors shouldn't affect outer scope, so also cyan.";
         } {
             Debug d{&out, Debug::Flag::NoNewlineAtTheEnd};
@@ -814,6 +853,7 @@ void DebugTest::colorsScoped() {
         "\033[0;36mThis should be cyan.\n"
         "This also,\033[0;1;34m this bold blue,\033[0;36m this again cyan and \033[0;7;32mthis inverted green.\033[0;36m\n"
         "This should be cyan again.\n"
+        "\033[0;33mThis is yellow, and the move-constructed instance should still correctly reset to cyan.\033[0;36m\n"
         "Disabling colors shouldn't affect outer scope, so also cyan.\n"
         "\033[0m"
 
@@ -921,7 +961,8 @@ void DebugTest::valueAsColor() {
     {
         Debug d{Debug::Flag::Color|Debug::Flag::NoSpace};
         /* *not* 255 as that would be an infinite loop */
-        for(unsigned char i = 0; i < 250; i += 7) d << i;
+        for(unsigned char i = 0; i < 250; i += 7)
+            d << i;
     }
 
     /* The modifier should work only for the immediately following value */
@@ -940,7 +981,8 @@ void DebugTest::valueAsColorColorsDisabled() {
     {
         Debug d{Debug::Flag::Color|Debug::Flag::DisableColors|Debug::Flag::NoSpace};
         /* *not* 255 as that would be an infinite loop */
-        for(unsigned char i = 0; i < 250; i += 7) d << i;
+        for(unsigned char i = 0; i < 250; i += 7)
+            d << i;
     }
 
     /* The modifier should work only for the immediately following value */
@@ -1162,6 +1204,26 @@ void DebugTest::scopedOutput() {
     CORRADE_COMPARE(error2.str(), "smells\n");
 }
 
+void DebugTest::move() {
+    std::stringstream out;
+    {
+        Debug a{&out, Debug::Flag::Hex};
+        a << "hello," << Debug::space;
+        CORRADE_COMPARE(out.str(), "hello, ");
+        CORRADE_COMPARE(a.flags(), Debug::Flag::Hex);
+        CORRADE_COMPARE(a.immediateFlags(), Debug::Flag::Hex|Debug::Flag::NoSpace);
+
+        /* This should correctly transfer all intermediate state and make the
+           other one empty so it doesn't print a second newline at the end
+           etc. */
+        Debug b = Utility::move(a);
+        CORRADE_COMPARE(b.flags(), Debug::Flag::Hex);
+        CORRADE_COMPARE(b.immediateFlags(), Debug::Flag::Hex|Debug::Flag::NoSpace);
+        b << 0xfeed;
+    }
+    CORRADE_COMPARE(out.str(), "hello, 0xfeed\n");
+}
+
 void DebugTest::stringOutput() {
     Containers::String debug, warning, error;
 
@@ -1221,14 +1283,19 @@ void DebugTest::stringOutputScopedFlush() {
         Debug{} << "hey!";
         CORRADE_COMPARE(out, "hihey!\n");
 
-        /* This one will get flushed only once the Debug instance is
+        /* Without a newline at the end but an explicit newline call it is
+           also */
+        Debug{Debug::Flag::NoNewlineAtTheEnd} << "hello?" << Debug::newline;
+        CORRADE_COMPARE(out, "hihey!\nhello?\n");
+
+        /* This one will get flushed only once the `redirectOutput` instance is
            destructed. Until then, the string storage is moved out to a
            growable array internally. */
         /** @todo clean up once the string is capable of growing */
         Debug{Debug::Flag::NoNewlineAtTheEnd} << "?!";
         CORRADE_COMPARE(out, "");
     }
-    CORRADE_COMPARE(out, "hihey!\n?!");
+    CORRADE_COMPARE(out, "hihey!\nhello?\n?!");
 }
 
 void DebugTest::stringOutputReuseGrowable() {
@@ -1285,13 +1352,33 @@ void DebugTest::stringOutputReuseModifiedUnsynced() {
         debug << "hey";
         CORRADE_COMPARE(out, "");
 
-        /* In this case, modifying the string would cause the modification to be
-        lost on next write */
+        /* In this case, modifying the string would cause the modification to
+           be lost on next write */
         out = "voila";
 
         debug << "hello";
     }
     CORRADE_COMPARE(out, "hey hello");
+}
+
+void DebugTest::stringOutputMove() {
+    /* Like move() but with a String output. The internal stream is owned, so
+       it should transfer the ownership, resulting in exactly one deletion --
+       not two, and not leaking it either. */
+
+    Containers::String out;
+    {
+        Debug a{&out, Debug::Flag::Hex};
+        a << "hello," << Debug::space;
+        CORRADE_COMPARE(a.flags(), Debug::Flag::Hex);
+        CORRADE_COMPARE(a.immediateFlags(), Debug::Flag::Hex|Debug::Flag::NoSpace);
+
+        Debug b = Utility::move(a);
+        CORRADE_COMPARE(b.flags(), Debug::Flag::Hex);
+        CORRADE_COMPARE(b.immediateFlags(), Debug::Flag::Hex|Debug::Flag::NoSpace);
+        b << 0xfeed;
+    }
+    CORRADE_COMPARE(out, "hello, 0xfeed\n");
 }
 
 void DebugTest::debugColor() {
@@ -1361,7 +1448,8 @@ void DebugTest::sourceLocation() {
 
         !Debug{} << "hello"; line = __LINE__;
 
-        !Debug{} << "and this is from another line";
+        /* Verify that the source location gets preserved on move as well */
+        Debug{Utility::move(!Debug{})} << "and this is from another line, a move-constructed instance even";
 
         !Debug{};
 
@@ -1386,13 +1474,13 @@ void DebugTest::sourceLocation() {
     #endif
     CORRADE_COMPARE(out.str(), Utility::formatString(
         __FILE__ ":{}: hello\n"
-        __FILE__ ":{}: and this is from another line\n"
+        __FILE__ ":{}: and this is from another line, a move-constructed instance even\n"
         __FILE__ ":{}\n"
-        "this no longer\n", line, line + 2, line + 4));
+        "this no longer\n", line, line + 3, line + 5));
     #else
     CORRADE_COMPARE(out.str(),
         "hello\n"
-        "and this is from another line\n"
+        "and this is from another line, a move-constructed instance even\n"
         "this no longer\n");
     CORRADE_SKIP("Source location builtins not available.");
     #endif

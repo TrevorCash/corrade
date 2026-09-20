@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -82,6 +82,18 @@ namespace {
 
 template<class T> inline void toStream(std::ostream& s, const T& value) {
     s << value;
+}
+
+/* On certain platforms, passing a null char pointer to a stream causes
+   segfault or other nasty behavior. Treat a null char pointer as an empty
+   string instead, printing nothing. */
+template<> inline void toStream(std::ostream& s, const char* const& value) {
+    if(value)
+        s << value;
+}
+template<> inline void toStream(std::ostream& s, char* const& value) {
+    if(value)
+        s << value;
 }
 
 template<> inline void toStream(std::ostream& s, const Containers::StringView& value) {
@@ -173,8 +185,12 @@ CORRADE_VISIBILITY_EXPORT
     #endif
 #endif
 DebugGlobals debugGlobals{
-    #if defined(CORRADE_TARGET_MINGW) && defined(CORRADE_TARGET_CLANG)
-    /* Referencing the globals directly makes MinGW Clang segfault for some reason */
+    #ifdef CORRADE_TARGET_MINGW
+    /* Referencing the globals directly makes MinGW Clang (which uses native
+       TLS) and MSYS2 GCC 16.1+ (which switched to native TLS from emulated TLS
+       in that version, https://github.com/msys2/msys2.github.io/pull/434)
+       segfault, most likely because std::cout etc. are TLS variables as well
+       and they're queried too early, before they get initialized. */
     Debug::defaultOutput(), Warning::defaultOutput(), Error::defaultOutput(),
     #else
     &std::cout, &std::cerr, &std::cerr,
@@ -338,6 +354,19 @@ class StringStream: public std::ostream, std::streambuf {
         Containers::String& _out;
         std::size_t _initialSize;
 };
+
+void Debug::newline(Debug& debug) {
+    /* Use std::endl instead of just '\n' to force a flush, i.e. having the
+       same behavior as if a Debug instance would be used to print the line,
+       destructed (and flushing) at the end. This is essential for example in
+       case of a redirection to a String with NoNewlineAtTheEnd, where the
+       content would only be exposed to the String at Debug destruction, not
+       earlier. */
+    if(debug._output)
+        *debug._output << std::endl;
+    /* The next value shouldn't be preceded by a space */
+    debug << nospace;
+}
 
 enum class Debug::InternalFlag: unsigned char {
     OwnedStream = 1 << 0,
@@ -657,6 +686,28 @@ void Debug::cleanupOnDestruction() {
         delete _output;
 }
 
+Debug::Debug(Debug&& other) noexcept: _output{other._output}, _flags{other._flags}, _immediateFlags{other._immediateFlags}, _internalFlags{other._internalFlags},
+    #if defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_UTILITY_USE_ANSI_COLORS)
+    _previousColorAttributes{other._previousColorAttributes},
+    #else
+    _previousColor{other._previousColor},
+    #endif
+    #ifdef CORRADE_SOURCE_LOCATION_BUILTINS_SUPPORTED
+    _sourceLocationLine{other._sourceLocationLine},
+    _sourceLocationFile{other._sourceLocationFile},
+    #endif
+    _previousGlobalOutput{other._previousGlobalOutput}
+{
+    /* The moved-out instance should do no reset or cleanup on destruction,
+       it's all taken over by the new instance. These two take care of not
+       printing anything to the output on destruction and not attempting to
+       delete the stream if it was owned (i.e., a StringStream). */
+    other._output = nullptr;
+    other._internalFlags = {};
+    /** @todo cleanupOnDestruction() still unconditionally resets
+        debugGlobals.output, what to do with that? */
+}
+
 Debug::~Debug() {
     cleanupOnDestruction();
 }
@@ -692,7 +743,8 @@ Fatal::~Fatal() {
 #endif
 
 template<class T> Debug& Debug::print(const T& value) {
-    if(!_output) return *this;
+    if(!_output)
+        return *this;
 
     #ifdef CORRADE_SOURCE_LOCATION_BUILTINS_SUPPORTED
     /* Print source location, if not printed yet */
@@ -730,6 +782,7 @@ Debug& Debug::operator<<(const void* const value) {
 }
 
 Debug& Debug::operator<<(const char* value) { return print(value); }
+Debug& Debug::operator<<(char* value) { return print(value); }
 Debug& Debug::operator<<(Containers::StringView value) { return print(value); }
 Debug& Debug::operator<<(Containers::MutableStringView value) { return print(value); }
 Debug& Debug::operator<<(const Containers::String& value) { return print(value); }
@@ -783,17 +836,20 @@ Debug& Debug::operator<<(unsigned long value) { return print(value); }
 Debug& Debug::operator<<(unsigned long long value) { return print(value); }
 
 Debug& Debug::operator<<(float value) {
-    if(!_output) return *this;
+    if(!_output)
+        return *this;
     *_output << std::setprecision(Implementation::FloatPrecision<float>::Digits);
     return print(value);
 }
 Debug& Debug::operator<<(double value) {
-    if(!_output) return *this;
+    if(!_output)
+        return *this;
     *_output << std::setprecision(Implementation::FloatPrecision<double>::Digits);
     return print(value);
 }
 Debug& Debug::operator<<(long double value) {
-    if(!_output) return *this;
+    if(!_output)
+        return *this;
     *_output << std::setprecision(Implementation::FloatPrecision<long double>::Digits);
     return print(value);
 }

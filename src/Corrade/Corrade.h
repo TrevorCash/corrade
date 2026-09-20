@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -285,8 +285,8 @@ Defined if the library is built for Windows Store or Phone.
 /**
 @brief Emscripten target
 
-Defined if the library is built for [Emscripten](http://kripken.github.io/emscripten-site/).
-Note that while the behavior of Emscripten is closely emulating Unix systems,
+Defined if the library is built for [Emscripten](https://emscripten.org). Note
+that while the behavior of Emscripten is closely emulating Unix systems,
 @ref CORRADE_TARGET_UNIX is not defined there, only `CORRADE_TARGET_EMSCRIPTEN`.
 @see @ref CORRADE_TARGET_CLANG, @ref building-corrade, @ref corrade-cmake
 */

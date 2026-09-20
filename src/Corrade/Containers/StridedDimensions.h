@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -188,9 +188,7 @@ template<unsigned dimensions, class T> class StridedDimensions {
         explicit StridedDimensions(Corrade::NoInitT) noexcept {}
 
         /** @brief Constructor */
-        template<class ...Args> constexpr /*implicit*/ StridedDimensions(T first, Args... next) noexcept: _data{T(first), T(next)...} {
-            static_assert(sizeof...(Args) + 1 == dimensions, "wrong value count");
-        }
+        template<class ...Args, typename std::enable_if<sizeof...(Args) + 1 == dimensions, int>::type = 0> constexpr /*implicit*/ StridedDimensions(T first, Args... next) noexcept: _data{T(first), T(next)...} {}
 
         /** @brief Construct from an array */
         constexpr /*implicit*/ StridedDimensions(const T(&values)[dimensions]) noexcept: StridedDimensions{values, typename Implementation::GenerateSequence<dimensions>::Type{}} {}
@@ -228,14 +226,16 @@ template<unsigned dimensions, class T> class StridedDimensions {
         /** @brief Equality comparison */
         bool operator==(const StridedDimensions<dimensions, T>& other) const {
             for(std::size_t i = 0; i != dimensions; ++i)
-                if(_data[i] != other._data[i]) return false;
+                if(_data[i] != other._data[i])
+                    return false;
             return true;
         }
 
         /** @brief Non-equality comparison */
         bool operator!=(const StridedDimensions<dimensions, T>& other) const {
             for(std::size_t i = 0; i != dimensions; ++i)
-                if(_data[i] != other._data[i]) return true;
+                if(_data[i] != other._data[i])
+                    return true;
             return false;
         }
 

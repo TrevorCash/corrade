@@ -2,7 +2,7 @@
 #   This file is part of Corrade.
 #
 #   Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-#               2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+#               2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
 #             Vladimír Vondruš <mosra@centrum.cz>
 #
 #   Permission is hereby granted, free of charge, to any person obtaining a
@@ -65,11 +65,17 @@ set_tests_properties(UtilityArgumentsTest
 
 add_library(AssertTestObjects OBJECT AssertTest.cpp)
 add_library(DebugAssertTestObjects OBJECT AssertTest.cpp)
+add_library(AssertOverridesTestObjects OBJECT AssertTest.cpp)
 target_include_directories(AssertTestObjects PRIVATE $<TARGET_PROPERTY:CorradeUtility,INTERFACE_INCLUDE_DIRECTORIES>)
+target_include_directories(AssertOverridesTestObjects PRIVATE $<TARGET_PROPERTY:CorradeUtility,INTERFACE_INCLUDE_DIRECTORIES>)
 target_include_directories(DebugAssertTestObjects PRIVATE $<TARGET_PROPERTY:CorradeUtility,INTERFACE_INCLUDE_DIRECTORIES>)
+target_compile_definitions(AssertOverridesTestObjects PRIVATE "CORRADE_ASSERT_INCLUDE=\"Corrade/Utility/Test/AssertTestOverrides.h\"")
 target_compile_definitions(DebugAssertTestObjects PRIVATE "TEST_DEBUG_ASSERT")
 corrade_add_test(UtilityAssertTest
     $<TARGET_OBJECTS:AssertTestObjects>
+    ${_CORRADE_OBJECT_ONLY_TARGET_DUMMY_CPP}) # XCode workaround
+corrade_add_test(UtilityAssertOverridesTest
+    $<TARGET_OBJECTS:AssertOverridesTestObjects>
     ${_CORRADE_OBJECT_ONLY_TARGET_DUMMY_CPP}) # XCode workaround
 corrade_add_test(UtilityDebugAssertTest
     $<TARGET_OBJECTS:DebugAssertTestObjects>
@@ -187,6 +193,15 @@ if(CORRADE_TARGET_EMSCRIPTEN OR CORRADE_TARGET_ANDROID)
         UtilityAssertTestFailInterAssUnre___
         UtilityDebugAssertTestFailInAssUn___
         PROPERTIES PASS_REGULAR_EXPRESSION "Reached unreachable code at ")
+
+    # Assert overrides tested just for one variant, that should be enough
+    corrade_add_test(UtilityAssertOverridesTestFailAssert
+        $<TARGET_OBJECTS:AssertOverridesTestObjects>
+        ${_CORRADE_OBJECT_ONLY_TARGET_DUMMY_CPP} # XCode workaround
+        ARGUMENTS --fail-on-assert true)
+    set_tests_properties(
+        UtilityAssertOverridesTestFailAssert
+        PROPERTIES PASS_REGULAR_EXPRESSION "Here comes an assertion: A should be zero\nABORTING.")
 endif()
 
 # The same as above, but using CORRADE_STANDARD_ASSERT
@@ -262,6 +277,9 @@ target_include_directories(UtilityConfigurationTest PRIVATE ${CMAKE_CURRENT_BINA
 corrade_add_test(UtilityConfigurationValueTest ConfigurationValueTest.cpp)
 
 corrade_add_test(UtilityDebugTest DebugTest.cpp)
+corrade_add_test(UtilityDeprecationMacrosTest DeprecationMacrosTest.cpp)
+set_target_properties(UtilityDeprecationMacrosTest PROPERTIES
+    COMPILE_DEFINITIONS COMPILING_AS_CPP11)
 corrade_add_test(UtilityMacrosTest MacrosTest.cpp)
 if(NOT CORRADE_TARGET_EMSCRIPTEN)
     set(THREADS_PREFER_PTHREAD_FLAG TRUE)
@@ -272,6 +290,11 @@ endif()
 
 corrade_add_test(UtilityMathTest MathTest.cpp)
 
+corrade_add_test(UtilityStringBenchmark StringBenchmark.cpp
+    LIBRARIES CorradeTestSuiteTestLib
+    FILES ${PROJECT_SOURCE_DIR}/src/Corrade/Containers/Test/StringTestFiles/lorem-ipsum.txt)
+target_include_directories(UtilityStringBenchmark PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+
 # Build these only if there's no explicit -std= passed in the flags
 if(NOT CMAKE_CXX_FLAGS MATCHES "-std=")
     # Copied verbatim from src/Corrade/Test/CMakeLists.txt, please keep in sync
@@ -279,8 +302,12 @@ if(NOT CMAKE_CXX_FLAGS MATCHES "-std=")
        (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS "3.4") OR
        (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang" AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS "6.0.1") OR
        (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS "19.10"))
+        corrade_add_test(UtilityDeprecationMacrosCpp14Test DeprecationMacrosTest.cpp)
+        set_target_properties(UtilityDeprecationMacrosCpp14Test PROPERTIES
+            COMPILE_DEFINITIONS COMPILING_AS_CPP14)
         corrade_add_test(UtilityMacrosCpp14Test MacrosCpp14Test.cpp)
         set_target_properties(
+            UtilityDeprecationMacrosCpp14Test
             UtilityMacrosCpp14Test
             PROPERTIES CORRADE_CXX_STANDARD 14)
    endif()
@@ -291,14 +318,22 @@ if(NOT CMAKE_CXX_FLAGS MATCHES "-std=")
        (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang" AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS "9.3") OR
        (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS "19.10"))
         corrade_add_test(UtilityDebugStlCpp17Test DebugStlCpp17Test.cpp)
+        corrade_add_test(UtilityDeprecationMacrosCpp17Test DeprecationMacrosTest.cpp)
+        set_target_properties(UtilityDeprecationMacrosCpp17Test PROPERTIES
+            COMPILE_DEFINITIONS COMPILING_AS_CPP17)
         corrade_add_test(UtilityFormatStlStringViewTest FormatStlStringViewTest.cpp)
         corrade_add_test(UtilityMacrosCpp17Test MacrosCpp17Test.cpp)
         set_target_properties(
             UtilityDebugStlCpp17Test
+            UtilityDeprecationMacrosCpp17Test
             UtilityFormatStlStringViewTest
             UtilityMacrosCpp17Test
             PROPERTIES CORRADE_CXX_STANDARD 17)
         target_include_directories(UtilityFormatStlStringViewTest PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+
+        # Build the Utility::String benchmark with C++17 if we can to test also
+        # std::from_chars
+        set_target_properties(UtilityStringBenchmark PROPERTIES CORRADE_CXX_STANDARD 17)
     endif()
 
     # Copied verbatim from src/Corrade/Test/CMakeLists.txt, please keep in sync
@@ -398,11 +433,6 @@ if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND NOT CMAKE_CXX_COMPILER_VERSION VERS
 endif()
 
 corrade_add_test(UtilityStringTest StringTest.cpp LIBRARIES CorradeTestSuiteTestLib)
-
-corrade_add_test(UtilityStringBenchmark StringBenchmark.cpp
-    LIBRARIES CorradeTestSuiteTestLib
-    FILES ${PROJECT_SOURCE_DIR}/src/Corrade/Containers/Test/StringTestFiles/lorem-ipsum.txt)
-target_include_directories(UtilityStringBenchmark PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 corrade_add_test(UtilitySystemTest SystemTest.cpp)
 corrade_add_test(UtilityTweakableParserTest TweakableParserTest.cpp)

@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -27,7 +27,7 @@
 */
 
 /** @file
- * @brief Class @ref Corrade::Containers::FunctionData, @ref Corrade::Containers::Function<R(Args...)> "Corrade::Containers::Function"
+ * @brief Class @ref Corrade::Containers::FunctionData, @ref Corrade::Containers::Function<R(Args...)> "Corrade::Containers::Function", tag type @ref Corrade::Containers::NoAllocateInitT, tag @ref Corrade::Containers::NoAllocateInit
  * @m_since_latest
  */
 
@@ -156,7 +156,7 @@ class FunctionData {
 
             /* Member functions */
             struct {
-                char data[Implementation::FunctionPointerSize*sizeof(std::size_t)];
+                std::size_t data[Implementation::FunctionPointerSize];
                 void* instance;
             } member;
 
@@ -299,11 +299,11 @@ The @ref Function<R(Args...)> "Function" class is internally made large enough
 to fit any free or member function pointer. But because member function
 pointers can increase in size if multiple inheritance and/or virtual
 inheritance is involved, that space can be repurposed also for saving up to 24
-bytes of stateful lambda / functor data on 64-bit platforms (and up to 16 bytes
-on 32-bit platforms). If larger, the data is allocated on heap instead. For
-implementation simplicity reasons the state is also allocated if isn't
-trivially copyable. You can use @ref isAllocated() to check whether the
-function state needed a heap allocation or not.
+bytes of stateful lambda / functor data on 64-bit platforms, up to 12 bytes
+on 32-bit platforms, and up to 16 bytes on 32-bit Windows. If larger, the data
+is allocated on heap instead. For implementation simplicity reasons the state
+is also allocated if isn't trivially copyable. You can use @ref isAllocated()
+to check whether the function state needed a heap allocation or not.
 
 @snippet Containers.cpp Function-usage-stateful
 
@@ -423,7 +423,7 @@ template<class R, class ...Args> class Function<R(Args...)>: public FunctionData
                overload makes no sense */
             , typename std::enable_if<Implementation::IsFunctor<typename std::decay<F>::type, R(Args...)>::value, int>::type = 0
             #endif
-        > explicit Function(NoAllocateInitT, F&& f) noexcept;
+        > /*implicit*/ Function(NoAllocateInitT, F&& f) noexcept;
 
         /**
          * @brief Call the function pointer
@@ -622,7 +622,8 @@ template<class R, class ...Args> template<class Instance, class Class> Function<
        otherwise this would get confused with a heap-allocated functor (that
        has nullptr _call but non-null _storage.functor.call, which aliases
        _storage.member.instance) */
-    if(!f) return;
+    if(!f)
+        return;
 
     _storage.member.instance = &instance;
     reinterpret_cast<R(Class::*&)(Args...)>(_storage.member.data) = f;
@@ -643,7 +644,8 @@ template<class R, class ...Args> template<class Instance, class Class> Function<
 template<class R, class ...Args> template<class Instance, class Class> Function<R(Args...)>::Function(Instance& instance, R(Class::*f)(Args...) &) noexcept {
     static_assert(sizeof(f) <= sizeof(_storage.member.data),
         "size of member function pointer is incorrectly assumed to be smaller");
-    if(!f) return;
+    if(!f)
+        return;
 
     _storage.member.instance = &instance;
     reinterpret_cast<R(Class::*&)(Args...) &>(_storage.member.data) = f;
@@ -660,7 +662,8 @@ template<class R, class ...Args> template<class Instance, class Class> Function<
 template<class R, class ...Args> template<class Instance, class Class> Function<R(Args...)>::Function(Instance& instance, R(Class::*f)(Args...) const) noexcept {
     static_assert(sizeof(f) <= sizeof(_storage.member.data),
         "size of member function pointer is incorrectly assumed to be smaller");
-    if(!f) return;
+    if(!f)
+        return;
 
     _storage.member.instance = &instance;
     reinterpret_cast<R(Class::*&)(Args...) const>(_storage.member.data) = f;
@@ -677,7 +680,8 @@ template<class R, class ...Args> template<class Instance, class Class> Function<
 template<class R, class ...Args> template<class Instance, class Class> Function<R(Args...)>::Function(Instance& instance, R(Class::*f)(Args...) const &) noexcept {
     static_assert(sizeof(f) <= sizeof(_storage.member.data),
         "size of member function pointer is incorrectly assumed to be smaller");
-    if(!f) return;
+    if(!f)
+        return;
 
     _storage.member.instance = &instance;
     reinterpret_cast<R(Class::*&)(Args...) const &>(_storage.member.data) = f;

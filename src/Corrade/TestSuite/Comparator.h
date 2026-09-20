@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -266,7 +266,8 @@ template<class T> class Comparator {
 template<class T> Comparator<T>::Comparator(): actualValue(), expectedValue() {}
 
 template<class T> ComparisonStatusFlags Comparator<T>::operator()(const T& actual, const T& expected) {
-    if(actual == expected) return {};
+    if(actual == expected)
+        return {};
 
     actualValue = &actual;
     expectedValue = &expected;

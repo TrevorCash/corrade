@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -40,10 +40,21 @@ struct ArrayViewStlSpanTest: TestSuite::Tester {
     void convertConstFromSpanEmpty();
     void convertToConstSpan();
     void convertToConstSpanEmpty();
+
+    void convertFromSpanDerived();
+    void convertConstFromSpanDerived();
+    /* So far I don't implement this for the other direction, as the use case
+       of people wanting to pass STL things to Corrade is far bigger than the
+       use case of people wanting to feed Corrade to APIs taking std::span.
+       Plus I'm not sure if such behavior would even be expected / desired in
+       the STL world. */
+
     void convertVoidFromSpan();
     void convertVoidFromSpanEmpty();
     void convertVoidFromConstSpan();
     void convertVoidFromConstSpanEmpty();
+    void convertConstVoidFromSpan();
+    void convertConstVoidFromSpanEmpty();
 
     void convertFromSpanSized();
     void convertFromSpanSizedEmpty();
@@ -51,10 +62,17 @@ struct ArrayViewStlSpanTest: TestSuite::Tester {
     void convertConstFromSpanSized();
     void convertConstFromSpanSizedEmpty();
     void convertToConstSpanSized();
+
+    void convertFromSpanSizedDerived();
+    void convertConstFromSpanSizedDerived();
+    /* So far I don't implement this for the other direction, see above */
+
     void convertVoidFromSpanSized();
     void convertVoidFromSpanSizedEmpty();
     void convertVoidFromConstSpanSized();
     void convertVoidFromConstSpanSizedEmpty();
+    void convertConstVoidFromSpanSized();
+    void convertConstVoidFromSpanSizedEmpty();
 };
 
 ArrayViewStlSpanTest::ArrayViewStlSpanTest() {
@@ -64,10 +82,16 @@ ArrayViewStlSpanTest::ArrayViewStlSpanTest() {
               &ArrayViewStlSpanTest::convertConstFromSpanEmpty,
               &ArrayViewStlSpanTest::convertToConstSpan,
               &ArrayViewStlSpanTest::convertToConstSpanEmpty,
+
+              &ArrayViewStlSpanTest::convertFromSpanDerived,
+              &ArrayViewStlSpanTest::convertConstFromSpanDerived,
+
               &ArrayViewStlSpanTest::convertVoidFromSpan,
               &ArrayViewStlSpanTest::convertVoidFromSpanEmpty,
               &ArrayViewStlSpanTest::convertVoidFromConstSpan,
               &ArrayViewStlSpanTest::convertVoidFromConstSpanEmpty,
+              &ArrayViewStlSpanTest::convertConstVoidFromSpan,
+              &ArrayViewStlSpanTest::convertConstVoidFromSpanEmpty,
 
               &ArrayViewStlSpanTest::convertFromSpanSized,
               &ArrayViewStlSpanTest::convertFromSpanSizedEmpty,
@@ -75,10 +99,16 @@ ArrayViewStlSpanTest::ArrayViewStlSpanTest() {
               &ArrayViewStlSpanTest::convertConstFromSpanSized,
               &ArrayViewStlSpanTest::convertConstFromSpanSizedEmpty,
               &ArrayViewStlSpanTest::convertToConstSpanSized,
+
+              &ArrayViewStlSpanTest::convertFromSpanSizedDerived,
+              &ArrayViewStlSpanTest::convertConstFromSpanSizedDerived,
+
               &ArrayViewStlSpanTest::convertVoidFromSpanSized,
               &ArrayViewStlSpanTest::convertVoidFromSpanSizedEmpty,
               &ArrayViewStlSpanTest::convertVoidFromConstSpanSized,
-              &ArrayViewStlSpanTest::convertVoidFromConstSpanSizedEmpty});
+              &ArrayViewStlSpanTest::convertVoidFromConstSpanSizedEmpty,
+              &ArrayViewStlSpanTest::convertConstVoidFromSpanSized,
+              &ArrayViewStlSpanTest::convertConstVoidFromSpanSizedEmpty});
 }
 
 #if __has_include(<span>)
@@ -170,6 +200,11 @@ void ArrayViewStlSpanTest::convertConstFromSpan() {
        is_convertible to catch also accidental explicit conversions. */
     CORRADE_VERIFY(std::is_constructible<Containers::ArrayView<const int>, std::span<int>>::value);
     CORRADE_VERIFY(!std::is_constructible<Containers::ArrayView<const float>, std::span<int>>::value);
+
+    /* Creating a non-const view from a const span should not be possible. Not
+       using is_convertible to catch also accidental explicit conversions. */
+    CORRADE_VERIFY(std::is_constructible<ArrayView<const float>, std::span<float>>::value);
+    CORRADE_VERIFY(!std::is_constructible<ArrayView<float>, std::span<const float>>::value);
     #endif
 }
 
@@ -218,6 +253,61 @@ void ArrayViewStlSpanTest::convertToConstSpanEmpty() {
     #endif
 }
 
+struct Base {
+    float a;
+};
+struct Derived: Base {};
+struct DerivedDifferentSize: Base {
+    int b;
+};
+
+void ArrayViewStlSpanTest::convertFromSpanDerived() {
+    #if !__has_include(<span>)
+    CORRADE_SKIP("The <span> header is not available on this platform.");
+    #else
+    Derived data[]{{{42.0f}}, {{13.3f}}, {{-25.0f}}};
+    std::span<Derived> a = data;
+
+    ArrayView<Base> b = a;
+    CORRADE_COMPARE(b.data(), static_cast<void*>(data));
+    CORRADE_COMPARE(b.size(), 3);
+    CORRADE_COMPARE(b[0].a, 42.0f);
+
+    /* Conversion the other way not allowed. Not using is_convertible to catch
+       also accidental explicit conversions. */
+    CORRADE_VERIFY(std::is_constructible<ArrayView<Base>, std::span<Derived>>::value);
+    CORRADE_VERIFY(!std::is_constructible<ArrayView<Derived>, std::span<Base>>::value);
+    /* Conversion from a derived type that isn't the same size shouldn't be
+       allowed either */
+    CORRADE_VERIFY(!std::is_constructible<ArrayView<Base>, std::span<DerivedDifferentSize>>::value);
+    #endif
+}
+
+void ArrayViewStlSpanTest::convertConstFromSpanDerived() {
+    #if !__has_include(<span>)
+    CORRADE_SKIP("The <span> header is not available on this platform.");
+    #else
+    Derived data[]{{{42.0f}}, {{13.3f}}, {{-25.0f}}};
+    std::span<Derived> a = data;
+
+    ArrayView<const Base> b = a;
+    CORRADE_COMPARE(b.data(), static_cast<const void*>(data));
+    CORRADE_COMPARE(b.size(), 3);
+    CORRADE_COMPARE(b[0].a, 42.0f);
+
+    /* Conversion the other way not allowed. Not using is_convertible to catch
+       also accidental explicit conversions. */
+    CORRADE_VERIFY(std::is_constructible<ArrayView<const Base>, std::span<Derived>>::value);
+    CORRADE_VERIFY(!std::is_constructible<ArrayView<const Derived>, std::span<Base>>::value);
+    /* Conversion from a derived type that isn't the same size shouldn't be
+       allowed either */
+    CORRADE_VERIFY(!std::is_constructible<ArrayView<const Base>, std::span<DerivedDifferentSize>>::value);
+    /* Creating a non-const view from a const span should not be possible
+       either */
+    CORRADE_VERIFY(!std::is_constructible<ArrayView<Base>, std::span<const Derived>>::value);
+    #endif
+}
+
 void ArrayViewStlSpanTest::convertVoidFromSpan() {
     #if !__has_include(<span>)
     CORRADE_SKIP("The <span> header is not available on this platform.");
@@ -225,7 +315,7 @@ void ArrayViewStlSpanTest::convertVoidFromSpan() {
     float data[]{42.0f, 13.37f, -25.0f};
     std::span<float> a = data;
 
-    ArrayView<const void> b = a;
+    ArrayView<void> b = a;
     CORRADE_COMPARE(b.data(), static_cast<const void*>(data));
     CORRADE_COMPARE(b.size(), 3*4);
     #endif
@@ -237,7 +327,7 @@ void ArrayViewStlSpanTest::convertVoidFromSpanEmpty() {
     #else
     std::span<float> a;
 
-    ArrayView<const void> b = a;
+    ArrayView<void> b = a;
     CORRADE_COMPARE(b.data(), nullptr);
     CORRADE_COMPARE(b.size(), 0);
     #endif
@@ -266,6 +356,36 @@ void ArrayViewStlSpanTest::convertVoidFromConstSpanEmpty() {
     CORRADE_SKIP("The <span> header is not available on this platform.");
     #else
     std::span<const float> a;
+
+    ArrayView<const void> b = a;
+    CORRADE_COMPARE(b.data(), nullptr);
+    CORRADE_COMPARE(b.size(), 0);
+    #endif
+}
+
+void ArrayViewStlSpanTest::convertConstVoidFromSpan() {
+    #if !__has_include(<span>)
+    CORRADE_SKIP("The <span> header is not available on this platform.");
+    #else
+    float data[]{42.0f, 13.37f, -25.0f};
+    std::span<float> a = data;
+
+    ArrayView<const void> b = a;
+    CORRADE_COMPARE(b.data(), static_cast<const void*>(data));
+    CORRADE_COMPARE(b.size(), 3*4);
+
+    /* Creating a non-const view from a const span should not be possible. Not
+       using is_convertible to catch also accidental explicit conversions. */
+    CORRADE_VERIFY(std::is_constructible<ArrayView<const void>, std::span<float>>::value);
+    CORRADE_VERIFY(!std::is_constructible<ArrayView<void>, std::span<const float>>::value);
+    #endif
+}
+
+void ArrayViewStlSpanTest::convertConstVoidFromSpanEmpty() {
+    #if !__has_include(<span>)
+    CORRADE_SKIP("The <span> header is not available on this platform.");
+    #else
+    std::span<float> a;
 
     ArrayView<const void> b = a;
     CORRADE_COMPARE(b.data(), nullptr);
@@ -346,7 +466,7 @@ void ArrayViewStlSpanTest::convertConstFromSpanSized() {
     std::span<float, 3> a = data;
 
     ArrayView<const float> b = a;
-    CORRADE_COMPARE(b, static_cast<const void*>(data));
+    CORRADE_COMPARE(b.data(), static_cast<const void*>(data));
     CORRADE_COMPARE(b.size(), 3);
     CORRADE_COMPARE(b[0], 42.0f);
 
@@ -364,7 +484,7 @@ void ArrayViewStlSpanTest::convertConstFromSpanSizedEmpty() {
     std::span<float, 0> a;
 
     ArrayView<const float> b = a;
-    CORRADE_COMPARE(b, nullptr);
+    CORRADE_COMPARE(b.data(), nullptr);
     CORRADE_COMPARE(b.size(), 0);
     #endif
 }
@@ -387,6 +507,53 @@ void ArrayViewStlSpanTest::convertToConstSpanSized() {
     #endif
 }
 
+void ArrayViewStlSpanTest::convertFromSpanSizedDerived() {
+    #if !__has_include(<span>)
+    CORRADE_SKIP("The <span> header is not available on this platform.");
+    #else
+    Derived data[]{{{42.0f}}, {{13.3f}}, {{-25.0f}}};
+    std::span<Derived, 3> a = data;
+
+    ArrayView<Base> b = a;
+    CORRADE_COMPARE(b.data(), static_cast<void*>(data));
+    CORRADE_COMPARE(b.size(), 3);
+    CORRADE_COMPARE(b[0].a, 42.0f);
+
+    /* Conversion the other way not allowed. Not using is_convertible to catch
+       also accidental explicit conversions. */
+    CORRADE_VERIFY(std::is_constructible<ArrayView<Base>, std::span<Derived, 3>>::value);
+    CORRADE_VERIFY(!std::is_constructible<ArrayView<Derived>, std::span<Base, 3>>::value);
+    /* Conversion from a derived type that isn't the same size shouldn't be
+       allowed either */
+    CORRADE_VERIFY(!std::is_constructible<ArrayView<Base>, std::span<DerivedDifferentSize, 3>>::value);
+    #endif
+}
+
+void ArrayViewStlSpanTest::convertConstFromSpanSizedDerived() {
+    #if !__has_include(<span>)
+    CORRADE_SKIP("The <span> header is not available on this platform.");
+    #else
+    Derived data[]{{{42.0f}}, {{13.3f}}, {{-25.0f}}};
+    std::span<Derived, 3> a = data;
+
+    ArrayView<const Base> b = a;
+    CORRADE_COMPARE(b.data(), static_cast<const void*>(data));
+    CORRADE_COMPARE(b.size(), 3);
+    CORRADE_COMPARE(b[0].a, 42.0f);
+
+    /* Conversion the other way not allowed. Not using is_convertible to catch
+       also accidental explicit conversions. */
+    CORRADE_VERIFY(std::is_constructible<ArrayView<const Base>, std::span<Derived, 3>>::value);
+    CORRADE_VERIFY(!std::is_constructible<ArrayView<const Derived>, std::span<Base, 3>>::value);
+    /* Conversion from a derived type that isn't the same size shouldn't be
+       allowed either */
+    CORRADE_VERIFY(!std::is_constructible<ArrayView<const Base>, std::span<DerivedDifferentSize, 3>>::value);
+    /* Creating a non-const view from a const span should not be possible
+       either */
+    CORRADE_VERIFY(!std::is_constructible<ArrayView<Base>, std::span<const Derived, 3>>::value);
+    #endif
+}
+
 void ArrayViewStlSpanTest::convertVoidFromSpanSized() {
     #if !__has_include(<span>)
     CORRADE_SKIP("The <span> header is not available on this platform.");
@@ -395,12 +562,8 @@ void ArrayViewStlSpanTest::convertVoidFromSpanSized() {
     std::span<float, 3> a = data;
 
     ArrayView<void> b = a;
-    CORRADE_COMPARE(b, static_cast<void*>(data));
+    CORRADE_COMPARE(b.data(), static_cast<void*>(data));
     CORRADE_COMPARE(b.size(), 3*4);
-
-    ArrayView<const void> cb = a;
-    CORRADE_COMPARE(cb, static_cast<const void*>(data));
-    CORRADE_COMPARE(cb.size(), 3*4);
     #endif
 }
 
@@ -411,12 +574,8 @@ void ArrayViewStlSpanTest::convertVoidFromSpanSizedEmpty() {
     std::span<float, 0> a;
 
     ArrayView<void> b = a;
-    CORRADE_COMPARE(b, nullptr);
+    CORRADE_COMPARE(b.data(), nullptr);
     CORRADE_COMPARE(b.size(), 0);
-
-    ArrayView<const void> cb = a;
-    CORRADE_COMPARE(cb, nullptr);
-    CORRADE_COMPARE(cb.size(), 0);
     #endif
 }
 
@@ -428,12 +587,12 @@ void ArrayViewStlSpanTest::convertVoidFromConstSpanSized() {
     std::span<const float, 3> a = data;
 
     ArrayView<const void> b = a;
-    CORRADE_COMPARE(b, static_cast<const void*>(data));
+    CORRADE_COMPARE(b.data(), static_cast<const void*>(data));
     CORRADE_COMPARE(b.size(), 3*4);
 
     constexpr std::span<const float, 3> ca = Data;
     constexpr ArrayView<const void> cb = ca;
-    CORRADE_COMPARE(cb, static_cast<const void*>(Data));
+    CORRADE_COMPARE(cb.data(), static_cast<const void*>(Data));
     CORRADE_COMPARE(cb.size(), 3*4);
     #endif
 }
@@ -445,8 +604,38 @@ void ArrayViewStlSpanTest::convertVoidFromConstSpanSizedEmpty() {
     std::span<const float, 0> a;
 
     ArrayView<const void> b = a;
-    CORRADE_COMPARE(b, nullptr);
+    CORRADE_COMPARE(b.data(), nullptr);
     CORRADE_COMPARE(b.size(), 0);
+    #endif
+}
+
+void ArrayViewStlSpanTest::convertConstVoidFromSpanSized() {
+    #if !__has_include(<span>)
+    CORRADE_SKIP("The <span> header is not available on this platform.");
+    #else
+    float data[]{42.0f, 13.37f, -25.0f};
+    std::span<float, 3> a = data;
+
+    ArrayView<const void> b = a;
+    CORRADE_COMPARE(b.data(), static_cast<const void*>(data));
+    CORRADE_COMPARE(b.size(), 3*4);
+
+    /* Creating a non-const view from a const span should not be possible. Not
+       using is_convertible to catch also accidental explicit conversions. */
+    CORRADE_VERIFY(std::is_constructible<ArrayView<const void>, std::span<float, 3>>::value);
+    CORRADE_VERIFY(!std::is_constructible<ArrayView<void>, std::span<const float, 3>>::value);
+    #endif
+}
+
+void ArrayViewStlSpanTest::convertConstVoidFromSpanSizedEmpty() {
+    #if !__has_include(<span>)
+    CORRADE_SKIP("The <span> header is not available on this platform.");
+    #else
+    std::span<float, 0> a;
+
+    ArrayView<const void> b = a;
+    CORRADE_COMPARE(b.data(), nullptr);
+    CORRADE_COMPARE(b.size(), 0);;
     #endif
 }
 

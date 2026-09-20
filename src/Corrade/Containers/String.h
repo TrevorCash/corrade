@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -164,9 +164,6 @@ initialization constructors are provided, similarly to the @ref Array class:
 -   @ref String(NoInitT, std::size_t) keeps the contents uninitialized, except
     for the null terminator. Equivalent to @cpp new char[size + 1] @ce followed
     by @cpp string[size] = '\0' @ce.
-
-Unlike an @ref Array, there's no @ref DefaultInitT constructor, as the same
-behavior is already provided by @ref String(NoInitT, std::size_t).
 
 @subsection Containers-String-usage-wrapping Wrapping externally allocated strings
 
@@ -791,7 +788,7 @@ class CORRADE_UTILITY_EXPORT String {
          * @brief First byte
          *
          * Expects there is at least one byte.
-         * @see @ref begin(), @ref operator[]()
+         * @see @ref isEmpty(), @ref begin(), @ref operator[]()
          */
         char& front();
         char front() const; /**< @overload */
@@ -800,7 +797,7 @@ class CORRADE_UTILITY_EXPORT String {
          * @brief Last byte
          *
          * Expects there is at least one byte.
-         * @see @ref end(), @ref operator[]()
+         * @see @ref isEmpty(), @ref end(), @ref operator[]()
          */
         char& back();
         char back() const; /**< @overload */
@@ -1472,7 +1469,7 @@ class CORRADE_UTILITY_EXPORT String {
            of the deleter pointer, but function pointers apparently can have
            odd addresses on some platforms as well:
 
-            http://lists.llvm.org/pipermail/llvm-dev/2018-March/121953.html
+            https://lists.llvm.org/pipermail/llvm-dev/2018-March/121953.html
 
            The above approach is consistent with StringView, which is the
            preferrable solution after all. */

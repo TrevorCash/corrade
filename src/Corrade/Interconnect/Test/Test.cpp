@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -23,6 +23,8 @@
     FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
     DEALINGS IN THE SOFTWARE.
 */
+
+#define _CORRADE_NO_DEPRECATED_INTERCONNECT
 
 #include <functional>
 #include <string>
@@ -81,6 +83,7 @@ struct Test: TestSuite::Tester {
     void nonCopyableParameter();
 };
 
+CORRADE_IGNORE_DEPRECATED_PUSH
 class Postman: public Interconnect::Emitter {
     public:
         Signal newMessage(int price, Containers::StringView message) {
@@ -115,7 +118,7 @@ class TemplatedPostman: public Interconnect::Emitter {
            working, thus we need to do some otherwise useless work to
            differentiate them. Ugly as hell but better than disabling the
            optimization globally. Details:
-           http://blogs.msdn.com/b/oldnewthing/archive/2005/03/22/400373.aspx */
+           https://web.archive.org/web/20150703232520/http://blogs.msdn.com/b/oldnewthing/archive/2005/03/22/400373.aspx */
         int _functionHash;
         #endif
 };
@@ -958,6 +961,7 @@ void Test::nonCopyableParameter() {
     emitter.send(a);
     CORRADE_COMPARE(receiver.received, 42);
 }
+CORRADE_IGNORE_DEPRECATED_POP
 
 }}}}
 

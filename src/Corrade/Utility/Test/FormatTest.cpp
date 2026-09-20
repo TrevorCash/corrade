@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -55,7 +55,7 @@ struct FormatTest: TestSuite::Tester {
     void integerLongLong();
 
     void character();
-    void characterLong();
+    void characterBoolLong();
     void characterPrecision();
 
     void octal();
@@ -97,10 +97,10 @@ struct FormatTest: TestSuite::Tester {
     void numberedPrecisionBase();
     void mixed();
 
+    void numberedFormattersMixedPrecision();
+
     void toBuffer();
     void toBufferNullTerminatorFromSnprintfAtTheEnd();
-    void array();
-    void arrayNullTerminatorFromSnprintfAtTheEnd();
     void file();
     void fileLongDouble();
 
@@ -128,7 +128,7 @@ FormatTest::FormatTest() {
               &FormatTest::integerLongLong,
 
               &FormatTest::character,
-              &FormatTest::characterLong,
+              &FormatTest::characterBoolLong,
               &FormatTest::characterPrecision,
 
               &FormatTest::octal,
@@ -172,10 +172,10 @@ FormatTest::FormatTest() {
               &FormatTest::numberedPrecisionBase,
               &FormatTest::mixed,
 
+              &FormatTest::numberedFormattersMixedPrecision,
+
               &FormatTest::toBuffer,
               &FormatTest::toBufferNullTerminatorFromSnprintfAtTheEnd,
-              &FormatTest::array,
-              &FormatTest::arrayNullTerminatorFromSnprintfAtTheEnd,
               &FormatTest::file,
               &FormatTest::fileLongDouble,
 
@@ -205,13 +205,17 @@ void FormatTest::escapes() {
 }
 
 void FormatTest::integerChar() {
+    /* The char is signed or unsigned depending on platform (ARM has it
+       unsigned by default for example, because it maps better to the
+       instruction set) */
     if(std::is_signed<char>::value) {
         CORRADE_COMPARE(format<char>("{}", -15), "-15");
     } else {
         CORRADE_INFO("char is unsigned");
-        /* Android simulator does this. Huh? */
         CORRADE_COMPARE(format<char>("{}", -15), "241");
     }
+    /* This is what std::int8_t is usually typedef'd to */
+    CORRADE_COMPARE(format<signed char>("{}", -15), "-15");
     CORRADE_COMPARE(format<unsigned char>("{}", 230), "230");
 }
 
@@ -250,7 +254,7 @@ void FormatTest::character() {
     }
 }
 
-void FormatTest::characterLong() {
+void FormatTest::characterBoolLong() {
     CORRADE_SKIP_IF_NO_ASSERT();
 
     Containers::String out;
@@ -259,9 +263,11 @@ void FormatTest::characterLong() {
     /* Using formatInto() instead of format() to avoid all errors being printed
        twice due to the extra pass with size calculation */
     char buffer[128]{};
+    formatInto(buffer, "{:c}", true);
     formatInto(buffer, "{:c}", 97ll);
     formatInto(buffer, "{:c}", 97ull);
     CORRADE_COMPARE(out,
+        "Utility::format(): character type used for a boolean value\n"
         "Utility::format(): character type used for a 64-bit value\n"
         "Utility::format(): character type used for a 64-bit value\n");
 }
@@ -278,21 +284,25 @@ void FormatTest::characterPrecision() {
 }
 
 void FormatTest::octal() {
+    CORRADE_COMPARE(format("{:o}", true), "1");
     CORRADE_COMPARE(format("{:o}", 0777), "777");
     CORRADE_COMPARE(format("{:o}", 0777ull), "777");
 }
 
 void FormatTest::decimal() {
+    CORRADE_COMPARE(format("{:d}", true), "1");
     CORRADE_COMPARE(format("{:d}", 1234), "1234");
     CORRADE_COMPARE(format("{:d}", 1234ull), "1234");
 }
 
 void FormatTest::hexadecimal() {
+    CORRADE_COMPARE(format("{:x}", true), "1");
     CORRADE_COMPARE(format("{:x}", 0xdead), "dead");
     CORRADE_COMPARE(format("{:x}", 0xdeadbeefcafebabeull), "deadbeefcafebabe");
 }
 
 void FormatTest::hexadecimalUppercase() {
+    CORRADE_COMPARE(format("{:X}", false), "0");
     CORRADE_COMPARE(format("{:X}", 0xDEAD), "DEAD");
     CORRADE_COMPARE(format("{:X}", 0xDEADBEEFCAFEBABEULL), "DEADBEEFCAFEBABE");
 }
@@ -306,33 +316,41 @@ void FormatTest::integerFloat() {
     /* Using formatInto() instead of format() to avoid all errors being printed
        twice due to the extra pass with size calculation */
     char buffer[128]{};
+    formatInto(buffer, "{:g}", true);
     formatInto(buffer, "{:g}", 123456);
     formatInto(buffer, "{:g}", 123456ull);
     CORRADE_COMPARE(out,
+        /* Internally the bool delegates to a unsigned int helper, so it prints
+           the same assert as for integers */
+        "Utility::format(): floating-point type used for an integral value\n"
         "Utility::format(): floating-point type used for an integral value\n"
         "Utility::format(): floating-point type used for an integral value\n");
 }
 
 void FormatTest::integerPrecision() {
     /* Default should preserve the zero */
+    CORRADE_COMPARE(format("{}!", false), "0!");
     CORRADE_COMPARE(format("{}!", 0), "0!");
     CORRADE_COMPARE(format("{}!", 0u), "0!");
     CORRADE_COMPARE(format("{}!", 0ll), "0!");
     CORRADE_COMPARE(format("{}!", 0ull), "0!");
 
     /* Zero should not preserve the zero */
+    CORRADE_COMPARE(format("{:.0}!", false), "!");
     CORRADE_COMPARE(format("{:.0}!", 0), "!");
     CORRADE_COMPARE(format("{:.0}!", 0u), "!");
     CORRADE_COMPARE(format("{:.0}!", 0ll), "!");
     CORRADE_COMPARE(format("{:.0}!", 0ull), "!");
 
     /* Smaller should overflow */
+    CORRADE_COMPARE(format("{:.0}", true), "1");
     CORRADE_COMPARE(format("{:.2}", 1536), "1536");
     CORRADE_COMPARE(format("{:.2}", 1536u), "1536");
     CORRADE_COMPARE(format("{:.2}", 1536ll), "1536");
     CORRADE_COMPARE(format("{:.2}", 1536ull), "1536");
 
     /* Larger should pad from left */
+    CORRADE_COMPARE(format("{:.15}", true), "000000000000001");
     CORRADE_COMPARE(format("{:.15}", 1536), "000000000001536");
     CORRADE_COMPARE(format("{:.15}", 1536u), "000000000001536");
     CORRADE_COMPARE(format("{:.15}", 1536ll), "000000000001536");
@@ -341,28 +359,28 @@ void FormatTest::integerPrecision() {
 
 void FormatTest::floatingFloat() {
     CORRADE_COMPARE(format("{}", 12.34f), "12.34");
-    #ifndef __MINGW32__
-    CORRADE_COMPARE(format("{}", -1.32e+07f), "-1.32e+07");
-    #else
+    #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
     CORRADE_COMPARE(format("{}", -1.32e+07f), "-1.32e+007");
+    #else
+    CORRADE_COMPARE(format("{}", -1.32e+07f), "-1.32e+07");
     #endif
 }
 
 void FormatTest::floatingDouble() {
     CORRADE_COMPARE(format("{}", 12.3404), "12.3404");
-    #ifndef __MINGW32__
-    CORRADE_COMPARE(format("{}", -1.32e+37), "-1.32e+37");
-    #else
+    #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
     CORRADE_COMPARE(format("{}", -1.32e+37), "-1.32e+037");
+    #else
+    CORRADE_COMPARE(format("{}", -1.32e+37), "-1.32e+37");
     #endif
 }
 
 void FormatTest::floatingLongDouble() {
     CORRADE_COMPARE(format("{}", 12.3404l), "12.3404");
-    #ifndef __MINGW32__
-    CORRADE_COMPARE(format("{}", -1.32e+67l), "-1.32e+67");
-    #else
+    #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
     CORRADE_COMPARE(format("{}", -1.32e+67l), "-1.32e+067");
+    #else
+    CORRADE_COMPARE(format("{}", -1.32e+67l), "-1.32e+67");
     #endif
 }
 
@@ -370,34 +388,34 @@ template<class> struct FloatingPrecisionData;
 template<> struct FloatingPrecisionData<float> {
     static const char* name() { return "float"; }
     static const char* expected() {
-        #ifndef __MINGW32__
-        return "3.14159 -12345.7 1.23457e-12 3.14159";
-        #else
+        #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
         return "3.14159 -12345.7 1.23457e-012 3.14159";
+        #else
+        return "3.14159 -12345.7 1.23457e-12 3.14159";
         #endif
     }
 };
 template<> struct FloatingPrecisionData<double> {
     static const char* name() { return "double"; }
     static const char* expected() {
-        #ifndef __MINGW32__
-        return "3.14159265358979 -12345.6789012346 1.23456789012346e-12 3.14159";
-        #else
+        #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
         return "3.14159265358979 -12345.6789012346 1.23456789012346e-012 3.14159";
+        #else
+        return "3.14159265358979 -12345.6789012346 1.23456789012346e-12 3.14159";
         #endif
     }
 };
 template<> struct FloatingPrecisionData<long double> {
     static const char* name() { return "long double"; }
     static const char* expected() {
-        #ifndef __MINGW32__
+        #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
+        return "3.14159265358979324 -12345.6789012345679 1.23456789012345679e-012 3.14159";
+        #else
         #ifndef CORRADE_LONG_DOUBLE_SAME_AS_DOUBLE
         return "3.14159265358979324 -12345.6789012345679 1.23456789012345679e-12 3.14159";
         #else
         return "3.14159265358979 -12345.6789012346 1.23456789012346e-12 3.14159";
         #endif
-        #else
-        return "3.14159265358979324 -12345.6789012345679 1.23456789012345679e-012 3.14159";
         #endif
     }
 };
@@ -418,18 +436,18 @@ template<class T> void FormatTest::floatingPrecision() {
 }
 
 void FormatTest::floatGeneric() {
-    #ifndef __MINGW32__
-    CORRADE_COMPARE(format("{}", 1234.0e5f), "1.234e+08");
-    #else
+    #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
     CORRADE_COMPARE(format("{}", 1234.0e5f), "1.234e+008");
+    #else
+    CORRADE_COMPARE(format("{}", 1234.0e5f), "1.234e+08");
     #endif
     CORRADE_COMPARE(format("{}", 1234.0e5), "123400000");
     CORRADE_COMPARE(format("{}", 1234.0e5l), "123400000");
 
-    #ifndef __MINGW32__
-    CORRADE_COMPARE(format("{:g}", 1234.0e5f), "1.234e+08");
-    #else
+    #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
     CORRADE_COMPARE(format("{:g}", 1234.0e5f), "1.234e+008");
+    #else
+    CORRADE_COMPARE(format("{:g}", 1234.0e5f), "1.234e+08");
     #endif
     CORRADE_COMPARE(format("{:g}", 1234.0e5), "123400000");
     CORRADE_COMPARE(format("{:g}", 1234.0e5l), "123400000");
@@ -450,10 +468,10 @@ void FormatTest::floatGeneric() {
 }
 
 void FormatTest::floatGenericUppercase() {
-    #ifndef __MINGW32__
-    CORRADE_COMPARE(format("{:G}", 1234.0e5f), "1.234E+08");
-    #else
+    #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
     CORRADE_COMPARE(format("{:G}", 1234.0e5f), "1.234E+008");
+    #else
+    CORRADE_COMPARE(format("{:G}", 1234.0e5f), "1.234E+08");
     #endif
     CORRADE_COMPARE(format("{:G}", 1234.0e5), "123400000");
     CORRADE_COMPARE(format("{:G}", 1234.0e5l), "123400000");
@@ -467,7 +485,11 @@ void FormatTest::floatGenericUppercase() {
 }
 
 void FormatTest::floatExponent() {
-    #ifndef __MINGW32__
+    #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
+    CORRADE_COMPARE(format("{:e}", 1234.0e5f), "1.234000e+008");
+    CORRADE_COMPARE(format("{:e}", 1234.0e5), "1.234000000000000e+008");
+    CORRADE_COMPARE(format("{:e}", 1234.0e5l), "1.234000000000000000e+008");
+    #else
     CORRADE_COMPARE(format("{:e}", 1234.0e5f), "1.234000e+08");
     CORRADE_COMPARE(format("{:e}", 1234.0e5), "1.234000000000000e+08");
     #ifndef CORRADE_LONG_DOUBLE_SAME_AS_DOUBLE
@@ -475,31 +497,31 @@ void FormatTest::floatExponent() {
     #else
     CORRADE_COMPARE(format("{:e}", 1234.0e5l), "1.234000000000000e+08");
     #endif
-    #else
-    CORRADE_COMPARE(format("{:e}", 1234.0e5f), "1.234000e+008");
-    CORRADE_COMPARE(format("{:e}", 1234.0e5), "1.234000000000000e+008");
-    CORRADE_COMPARE(format("{:e}", 1234.0e5l), "1.234000000000000000e+008");
     #endif
 
-    #ifndef __MINGW32__
-    CORRADE_COMPARE(format("{:.3e}", 1.0f), "1.000e+00");
-    CORRADE_COMPARE(format("{:.3e}", 1.0), "1.000e+00");
-    CORRADE_COMPARE(format("{:.3e}", 1.0l), "1.000e+00");
-    CORRADE_COMPARE(format("{:.3e}", 12.34567f), "1.235e+01");
-    CORRADE_COMPARE(format("{:.3e}", 12.34567), "1.235e+01");
-    CORRADE_COMPARE(format("{:.3e}", 12.34567l), "1.235e+01");
-    #else
+    #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
     CORRADE_COMPARE(format("{:.3e}", 1.0f), "1.000e+000");
     CORRADE_COMPARE(format("{:.3e}", 1.0), "1.000e+000");
     CORRADE_COMPARE(format("{:.3e}", 1.0l), "1.000e+000");
     CORRADE_COMPARE(format("{:.3e}", 12.34567f), "1.235e+001");
     CORRADE_COMPARE(format("{:.3e}", 12.34567), "1.235e+001");
     CORRADE_COMPARE(format("{:.3e}", 12.34567l), "1.235e+001");
+    #else
+    CORRADE_COMPARE(format("{:.3e}", 1.0f), "1.000e+00");
+    CORRADE_COMPARE(format("{:.3e}", 1.0), "1.000e+00");
+    CORRADE_COMPARE(format("{:.3e}", 1.0l), "1.000e+00");
+    CORRADE_COMPARE(format("{:.3e}", 12.34567f), "1.235e+01");
+    CORRADE_COMPARE(format("{:.3e}", 12.34567), "1.235e+01");
+    CORRADE_COMPARE(format("{:.3e}", 12.34567l), "1.235e+01");
     #endif
 }
 
-void FormatTest::floatExponentUppercase() {
-    #ifndef __MINGW32__
+    void FormatTest::floatExponentUppercase() {
+    #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
+    CORRADE_COMPARE(format("{:E}", 1234.0e5f), "1.234000E+008");
+    CORRADE_COMPARE(format("{:E}", 1234.0e5), "1.234000000000000E+008");
+    CORRADE_COMPARE(format("{:E}", 1234.0e5l), "1.234000000000000000E+008");
+    #else
     CORRADE_COMPARE(format("{:E}", 1234.0e5f), "1.234000E+08");
     CORRADE_COMPARE(format("{:E}", 1234.0e5), "1.234000000000000E+08");
     #ifndef CORRADE_LONG_DOUBLE_SAME_AS_DOUBLE
@@ -507,26 +529,22 @@ void FormatTest::floatExponentUppercase() {
     #else
     CORRADE_COMPARE(format("{:E}", 1234.0e5l), "1.234000000000000E+08");
     #endif
-    #else
-    CORRADE_COMPARE(format("{:E}", 1234.0e5f), "1.234000E+008");
-    CORRADE_COMPARE(format("{:E}", 1234.0e5), "1.234000000000000E+008");
-    CORRADE_COMPARE(format("{:E}", 1234.0e5l), "1.234000000000000000E+008");
     #endif
 
-    #ifndef __MINGW32__
-    CORRADE_COMPARE(format("{:.3E}", 1.0f), "1.000E+00");
-    CORRADE_COMPARE(format("{:.3E}", 1.0), "1.000E+00");
-    CORRADE_COMPARE(format("{:.3E}", 1.0l), "1.000E+00");
-    CORRADE_COMPARE(format("{:.3E}", 12.34567f), "1.235E+01");
-    CORRADE_COMPARE(format("{:.3E}", 12.34567), "1.235E+01");
-    CORRADE_COMPARE(format("{:.3E}", 12.34567l), "1.235E+01");
-    #else
+    #if defined(CORRADE_TARGET_MINGW) && !defined(_UCRT)
     CORRADE_COMPARE(format("{:.3E}", 1.0f), "1.000E+000");
     CORRADE_COMPARE(format("{:.3E}", 1.0), "1.000E+000");
     CORRADE_COMPARE(format("{:.3E}", 1.0l), "1.000E+000");
     CORRADE_COMPARE(format("{:.3E}", 12.34567f), "1.235E+001");
     CORRADE_COMPARE(format("{:.3E}", 12.34567), "1.235E+001");
     CORRADE_COMPARE(format("{:.3E}", 12.34567l), "1.235E+001");
+    #else
+    CORRADE_COMPARE(format("{:.3E}", 1.0f), "1.000E+00");
+    CORRADE_COMPARE(format("{:.3E}", 1.0), "1.000E+00");
+    CORRADE_COMPARE(format("{:.3E}", 1.0l), "1.000E+00");
+    CORRADE_COMPARE(format("{:.3E}", 12.34567f), "1.235E+01");
+    CORRADE_COMPARE(format("{:.3E}", 12.34567), "1.235E+01");
+    CORRADE_COMPARE(format("{:.3E}", 12.34567l), "1.235E+01");
     #endif
 }
 
@@ -688,6 +706,17 @@ void FormatTest::mixed() {
         "this is certainly wrong, is");
 }
 
+void FormatTest::numberedFormattersMixedPrecision() {
+    /* Verify that the precision used for a formatter doesn't get reused for
+       all following occurences of it, even if they don't specify a
+       precision. In particular, if the size would be cached, could either
+       cause the subsequent numbers to have a wrong count of zeros. Or the
+       string could be longer than expected with garbage at the end because the
+       previous formatter for {0} is four chars longer than the last. */
+    CORRADE_COMPARE(format("{0:.2}x{1:.6}x{0:.5}x{1:.3}x{1}x{0}?", 7, 3),
+        "07x000003x00007x003x3x7?");
+}
+
 void FormatTest::toBuffer() {
     char buffer[15]{};
     buffer[13] = '?'; /* to verify that a null terminator wasn't printed */
@@ -705,16 +734,6 @@ void FormatTest::toBufferNullTerminatorFromSnprintfAtTheEnd() {
     CORRADE_COMPARE(Containers::StringView{buffer}, "hello 4");
 }
 
-void FormatTest::array() {
-    Containers::Array<char> array = format("hello, {}!", "world");
-    CORRADE_COMPARE((Containers::StringView{array, array.size()}), "hello, world!");
-}
-
-void FormatTest::arrayNullTerminatorFromSnprintfAtTheEnd() {
-    Containers::Array<char> array = format("hello {}", 42);
-    CORRADE_COMPARE((Containers::StringView{array, array.size()}), "hello 42");
-}
-
 void FormatTest::file() {
     Containers::String filename = Path::join(FORMAT_WRITE_TEST_DIR, "format.txt");
     CORRADE_VERIFY(Path::make(FORMAT_WRITE_TEST_DIR));
@@ -725,11 +744,11 @@ void FormatTest::file() {
         FILE* f = std::fopen(filename.data(), "w");
         CORRADE_VERIFY(f);
         Containers::ScopeGuard e{f, fclose};
-        formatInto(f, "A {} {} {} {} {} {} + ({}) {}",
-            "string", Containers::StringView{"file"}, -2000123, 4025136u, -12345678901234ll, 24568780984912ull, 12.3404f, 1.52);
+        formatInto(f, "A {} {} {} {} {} {} {} + ({}) {}",
+            "string", Containers::StringView{"file"}, false, -2000123, 4025136u, -12345678901234ll, 24568780984912ull, 12.3404f, 1.52);
     }
     CORRADE_COMPARE_AS(filename,
-        "A string file -2000123 4025136 -12345678901234 24568780984912 + (12.3404) 1.52",
+        "A string file 0 -2000123 4025136 -12345678901234 24568780984912 + (12.3404) 1.52",
         TestSuite::Compare::FileToString);
 }
 

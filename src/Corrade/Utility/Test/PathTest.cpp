@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -54,16 +54,6 @@
 #include <unistd.h>
 #endif
 
-/* The __EMSCRIPTEN_major__ etc macros used to be passed implicitly, version
-   3.1.4 moved them to a version header and version 3.1.23 dropped the
-   backwards compatibility. To work consistently on all versions, including the
-   header only if the version macros aren't present.
-   https://github.com/emscripten-core/emscripten/commit/f99af02045357d3d8b12e63793cef36dfde4530a
-   https://github.com/emscripten-core/emscripten/commit/f76ddc702e4956aeedb658c49790cc352f892e4c */
-#if defined(CORRADE_TARGET_EMSCRIPTEN) && !defined(__EMSCRIPTEN_major__)
-#include <emscripten/version.h>
-#endif
-
 #include "configure.h"
 
 namespace Corrade { namespace Utility { namespace Test { namespace {
@@ -83,14 +73,13 @@ struct PathTest: TestSuite::Tester {
     void splitExtensionFlags();
 
     void join();
-    #ifdef CORRADE_TARGET_WINDOWS
     void joinWindows();
-    #endif
     void joinMultiple();
     void joinMultipleAbsolute();
     void joinMultipleOneEmpty();
     void joinMultipleJustOne();
     void joinMultipleNone();
+    void joinBenchmark();
 
     void exists();
     void existsNoPermission();
@@ -334,6 +323,16 @@ const struct {
         Containers::StringViewFlag::Global},
 };
 
+const struct {
+    const char* name;
+    const char* filename;
+} JoinBenchmarkData[]{
+    {"regular filename",
+        "path/to/thing"},
+    {"Windows drive letter",
+        "C:/some/paths"},
+};
+
 #if defined(CORRADE_TARGET_UNIX) || (defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_TARGET_WINDOWS_RT))
 Containers::Optional<Containers::Array<const char, Path::MapDeleter>> writeWhileMappedMap(Containers::StringView filename, std::size_t) {
     Containers::Optional<Containers::Array<char, Path::MapDeleter>> mapped = Path::map(filename);
@@ -480,16 +479,17 @@ PathTest::PathTest() {
               &PathTest::splitExtensionFlags,
 
               &PathTest::join,
-              #ifdef CORRADE_TARGET_WINDOWS
               &PathTest::joinWindows,
-              #endif
               &PathTest::joinMultiple,
               &PathTest::joinMultipleAbsolute,
               &PathTest::joinMultipleOneEmpty,
               &PathTest::joinMultipleJustOne,
-              &PathTest::joinMultipleNone,
+              &PathTest::joinMultipleNone});
 
-              &PathTest::exists,
+    addInstancedBenchmarks({&PathTest::joinBenchmark},
+        1000, Containers::arraySize(JoinBenchmarkData));
+
+    addTests({&PathTest::exists,
               &PathTest::existsNoPermission,
               &PathTest::existsNonNullTerminated,
               &PathTest::existsUtf8,
@@ -700,13 +700,56 @@ PathTest::PathTest() {
         Path::remove(Path::join(_writeTestDir, "copyBenchmarkSource.dat"));
 }
 
-void PathTest::fromNativeSeparators() {
-    Containers::String nativeSeparators = Path::fromNativeSeparators("put\\ that/somewhere\\ else");
-    #ifdef CORRADE_TARGET_WINDOWS
-    CORRADE_COMPARE(nativeSeparators, "put/ that/somewhere/ else");
-    #else
-    CORRADE_COMPARE(nativeSeparators, "put\\ that/somewhere\\ else");
+namespace {
+
+#ifdef CORRADE_TARGET_EMSCRIPTEN
+/* Like corradeUtilityIsNodeOnWindows() in Utility.js.in but implemented inline
+   to hopefully prevent a case where the check would be broken and either
+   reporting false on Windows or true elsewhere */
+bool isNodeOnWindows() {
+    #pragma GCC diagnostic push
+    /* The damn thing moved the warning to another group in some version. Not
+       sure if it happened in Clang 10 already, but -Wc++20-extensions is new
+       in Clang 10, so just ignore both. HOWEVER, Emscripten often uses a
+       prerelease Clang, so if it reports version 10, it's likely version 9. So
+       check for versions _above_ 10 instead. */
+    #pragma GCC diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
+    #if __clang_major__ > 10
+    #pragma GCC diagnostic ignored "-Wc++20-extensions"
     #endif
+    return EM_ASM_INT({
+        return typeof process !== 'undefined' && process.platform == 'win32';
+    });
+    #pragma GCC diagnostic pop
+}
+#endif
+
+}
+
+void PathTest::fromNativeSeparators() {
+    #ifdef CORRADE_TARGET_EMSCRIPTEN
+    bool isWindows = isNodeOnWindows();
+    if(isWindows)
+        CORRADE_INFO("Running through node.js on Windows");
+    #endif
+
+    Containers::String nativeSeparators = Path::fromNativeSeparators("put\\ that/somewhere\\ else");
+
+    const char* expected =
+        #ifdef CORRADE_TARGET_EMSCRIPTEN
+        isWindows ?
+        #endif
+            #if defined(CORRADE_TARGET_WINDOWS) || defined(CORRADE_TARGET_EMSCRIPTEN)
+            "put/ that/somewhere/ else"
+            #endif
+            #ifdef CORRADE_TARGET_EMSCRIPTEN
+            :
+            #endif
+            #if !defined(CORRADE_TARGET_WINDOWS) || defined(CORRADE_TARGET_EMSCRIPTEN)
+            "put\\ that/somewhere\\ else"
+            #endif
+        ;
+    CORRADE_COMPARE(nativeSeparators, expected);
 }
 
 void PathTest::fromNativeSeparatorsRvalue() {
@@ -716,27 +759,58 @@ void PathTest::fromNativeSeparatorsRvalue() {
     const void* inputData = input.data();
     CORRADE_VERIFY(!input.isSmall());
 
-    /* On Windows it's passing through a String instance, elsewhere it's a
-       StringView (and by using String we'd get a copy) */
-    #ifdef CORRADE_TARGET_WINDOWS
+    /* On Windows and Emscripten it's passing through a String instance,
+       elsewhere it's a StringView (and by using String we'd get a copy) */
+    #if defined(CORRADE_TARGET_WINDOWS) || defined(CORRADE_TARGET_EMSCRIPTEN)
     Containers::String nativeSeparators = Path::fromNativeSeparators(Utility::move(input));
-    CORRADE_COMPARE(nativeSeparators, "foo/bar/");
     #else
     Containers::StringView nativeSeparators = Path::fromNativeSeparators(input);
-    CORRADE_COMPARE(nativeSeparators, "foo\\bar/");
     #endif
+
+    const char* expected =
+        #ifdef CORRADE_TARGET_EMSCRIPTEN
+        isNodeOnWindows() ?
+        #endif
+            #if defined(CORRADE_TARGET_WINDOWS) || defined(CORRADE_TARGET_EMSCRIPTEN)
+            "foo/bar/"
+            #endif
+            #ifdef CORRADE_TARGET_EMSCRIPTEN
+            :
+            #endif
+            #if !defined(CORRADE_TARGET_WINDOWS) || defined(CORRADE_TARGET_EMSCRIPTEN)
+            "foo\\bar/"
+            #endif
+        ;
+    CORRADE_COMPARE(nativeSeparators, expected);
 
     /* It should pass the data through if possible */
     CORRADE_COMPARE(nativeSeparators.data(), inputData);
 }
 
 void PathTest::toNativeSeparators() {
-    Containers::String nativeSeparators = Path::toNativeSeparators("this\\is a weird/system\\right");
-    #ifdef CORRADE_TARGET_WINDOWS
-    CORRADE_COMPARE(nativeSeparators, "this\\is a weird\\system\\right");
-    #else
-    CORRADE_COMPARE(nativeSeparators, "this\\is a weird/system\\right");
+    #ifdef CORRADE_TARGET_EMSCRIPTEN
+    bool isWindows = isNodeOnWindows();
+    if(isWindows)
+        CORRADE_INFO("Running through node.js on Windows");
     #endif
+
+    Containers::String nativeSeparators = Path::toNativeSeparators("this\\is a weird/system\\right");
+
+    const char* expected =
+        #ifdef CORRADE_TARGET_EMSCRIPTEN
+        isWindows ?
+        #endif
+            #if defined(CORRADE_TARGET_WINDOWS) || defined(CORRADE_TARGET_EMSCRIPTEN)
+            "this\\is a weird\\system\\right"
+            #endif
+            #ifdef CORRADE_TARGET_EMSCRIPTEN
+            :
+            #endif
+            #if !defined(CORRADE_TARGET_WINDOWS) || defined(CORRADE_TARGET_EMSCRIPTEN)
+            "this\\is a weird/system\\right"
+            #endif
+        ;
+    CORRADE_COMPARE(nativeSeparators, expected);
 }
 
 void PathTest::toNativeSeparatorsRvalue() {
@@ -748,13 +822,28 @@ void PathTest::toNativeSeparatorsRvalue() {
 
     /* On Windows it's passing through a String instance, elsewhere it's a
        StringView (and by using String we'd get a copy) */
-    #ifdef CORRADE_TARGET_WINDOWS
+    #if defined(CORRADE_TARGET_WINDOWS) || defined(CORRADE_TARGET_EMSCRIPTEN)
     Containers::String nativeSeparators = Path::toNativeSeparators(Utility::move(input));
-    CORRADE_COMPARE(nativeSeparators, "foo\\bar\\");
     #else
     Containers::StringView nativeSeparators = Path::toNativeSeparators(input);
-    CORRADE_COMPARE(nativeSeparators, "foo\\bar/");
     #endif
+
+    const char* expected =
+        #ifdef CORRADE_TARGET_EMSCRIPTEN
+        isNodeOnWindows() ?
+        #endif
+            #if defined(CORRADE_TARGET_WINDOWS) || defined(CORRADE_TARGET_EMSCRIPTEN)
+            "foo\\bar\\"
+            #endif
+            #ifdef CORRADE_TARGET_EMSCRIPTEN
+            :
+            #endif
+            #if !defined(CORRADE_TARGET_WINDOWS) || defined(CORRADE_TARGET_EMSCRIPTEN)
+            "foo\\bar/"
+            #endif
+        ;
+    CORRADE_COMPARE(nativeSeparators, expected);
+
     /* It should pass the data through if possible */
     CORRADE_COMPARE(nativeSeparators.data(), inputData);
 }
@@ -883,12 +972,34 @@ void PathTest::join() {
     CORRADE_COMPARE(Path::join("/foo/bar", "file.txt"), "/foo/bar/file.txt");
 }
 
-#ifdef CORRADE_TARGET_WINDOWS
 void PathTest::joinWindows() {
-    /* Drive letter */
-    CORRADE_COMPARE(Path::join("/foo/bar", "X:/path/file.txt"), "X:/path/file.txt");
+    /* Enabled also on non-Windows platforms to make sure the drive letter
+       detection isn't done by accident elsewhere */
+
+    #ifdef CORRADE_TARGET_EMSCRIPTEN
+    bool isWindows = isNodeOnWindows();
+    if(isWindows)
+        CORRADE_INFO("Running through node.js on Windows");
+    #endif
+
+    /* Drive letter. Verify also that the Windows-specific rules are *not*
+       applied if not running on Windows. */
+    const char* expected =
+        #ifdef CORRADE_TARGET_EMSCRIPTEN
+        isWindows ?
+        #endif
+            #if defined(CORRADE_TARGET_WINDOWS) || defined(CORRADE_TARGET_EMSCRIPTEN)
+            "X:/path/file.txt"
+            #endif
+            #ifdef CORRADE_TARGET_EMSCRIPTEN
+            :
+            #endif
+            #if !defined(CORRADE_TARGET_WINDOWS) || defined(CORRADE_TARGET_EMSCRIPTEN)
+            "/foo/bar/X:/path/file.txt"
+            #endif
+        ;
+    CORRADE_COMPARE(Path::join("/foo/bar", "X:/path/file.txt"), expected);
 }
-#endif
 
 void PathTest::joinMultiple() {
     CORRADE_COMPARE(Path::join({"foo", "bar", "file.txt"}), "foo/bar/file.txt");
@@ -908,6 +1019,22 @@ void PathTest::joinMultipleJustOne() {
 
 void PathTest::joinMultipleNone() {
     CORRADE_COMPARE(Path::join({}), "");
+}
+
+void PathTest::joinBenchmark() {
+    auto&& data = JoinBenchmarkData[testCaseInstanceId()];
+    setTestCaseDescription(data.name);
+
+    /* On Emscripten there's a runtime call into JS to check for the platform
+       being Windows, but to avoid overhead in all calls to join() it's done
+       only if the filename starts with a drive letter. The benchmark compares
+       a regular filename and the overhead of a path starting with a drive
+       letter. On all other platforms there should be no difference. */
+
+    Containers::String path = "/some/directory";
+
+    CORRADE_BENCHMARK(1000)
+        path = Path::join(path, data.filename);
 }
 
 void PathTest::exists() {
@@ -963,7 +1090,7 @@ void PathTest::existsNonNullTerminated() {
 }
 
 void PathTest::existsUtf8() {
-    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_major__*10000 + __EMSCRIPTEN_minor__*100 + __EMSCRIPTEN_tiny__ >= 30103
+    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_MAJOR__*10000 + __EMSCRIPTEN_MINOR__*100 + __EMSCRIPTEN_TINY__ >= 30103
     /* Emscripten 3.1.3 changed the way files are bundled, putting them
        directly to WASM instead of Base64'd to the JS file. However, it broke
        UTF-8 handling, causing both a compile error (due to a syntax error in
@@ -997,10 +1124,11 @@ void PathTest::isDirectorySymlink() {
 
     CORRADE_VERIFY(Path::exists(Path::join(_testDirSymlink, "dir-symlink")));
     {
-        #if !defined(CORRADE_TARGET_UNIX) && !defined(CORRADE_TARGET_EMSCRIPTEN)
-        /** @todo once implemented, can use Path::size() on file-symlink to
-            detect whether symlinks are preserved in the Git clone */
-        CORRADE_EXPECT_FAIL("Symlink support is implemented on Unix systems and Emscripten only.");
+        #ifndef CORRADE_TARGET_UNIX
+        /* See PathTest::sizeSymlink() for details. Can happen on Windows but
+           also on Emscripten when running under node.js on Windows. */
+        CORRADE_EXPECT_FAIL_IF(Path::size(Path::join(_testDirSymlink, "file-symlink")) != 11,
+            "Symlinks not preserved in the source tree, can't test.");
         #endif
         #if defined(CORRADE_TARGET_IOS) && defined(CORRADE_TESTSUITE_TARGET_XCTEST)
         CORRADE_EXPECT_FAIL_IF(!std::getenv("SIMULATOR_UDID"),
@@ -1059,7 +1187,7 @@ void PathTest::isDirectoryNonNullTerminated() {
 }
 
 void PathTest::isDirectoryUtf8() {
-    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_major__*10000 + __EMSCRIPTEN_minor__*100 + __EMSCRIPTEN_tiny__ >= 30103
+    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_MAJOR__*10000 + __EMSCRIPTEN_MINOR__*100 + __EMSCRIPTEN_TINY__ >= 30103
     /* Emscripten 3.1.3 changed the way files are bundled, putting them
        directly to WASM instead of Base64'd to the JS file. However, it broke
        UTF-8 handling, causing both a compile error (due to a syntax error in
@@ -1125,13 +1253,21 @@ void PathTest::makeExistsAsAFile() {
     CORRADE_VERIFY(!Path::make(file));
     /* It should fail also if some parent part of the path is a file */
     CORRADE_VERIFY(!Path::make(Path::join(file, "sub/dir")));
+    /* Emscripten before 3.1.53 says "Permission denied" (2) instead of "Not a
+       directory" (54), for some reason. Fixed in an absolutely unrelated PR at
+       https://github.com/emscripten-core/emscripten/pull/21136. */
     #ifdef CORRADE_TARGET_EMSCRIPTEN
-    /* Emscripten says "Permission denied" instead of "Not a directory", for
-       some reason */
+    #if __EMSCRIPTEN_MAJOR__*10000 + __EMSCRIPTEN_MINOR__*100 + __EMSCRIPTEN_TINY__ >= 30153
+    CORRADE_COMPARE_AS(out, format(
+        "Utility::Path::make(): {0} exists but is not a directory\n"
+        "Utility::Path::make(): can't create {0}/sub: error 54 (",
+        file), TestSuite::Compare::StringHasPrefix);
+    #else
     CORRADE_COMPARE_AS(out, format(
         "Utility::Path::make(): {0} exists but is not a directory\n"
         "Utility::Path::make(): can't create {0}/sub: error 2 (",
         file), TestSuite::Compare::StringHasPrefix);
+    #endif
     #elif defined(CORRADE_TARGET_WINDOWS)
     /* Windows APIs fill GetLastError() instead of errno, leading to a
        different code */
@@ -1180,8 +1316,9 @@ void PathTest::makeDotDotDot() {
     /* Creating current directory should be a no-op because it exists */
     CORRADE_VERIFY(Path::exists("."));
     {
-        #ifdef CORRADE_TARGET_EMSCRIPTEN
-        CORRADE_EXPECT_FAIL("Emscripten doesn't return EEXIST on mdkir(\".\") but fails instead.");
+        /* https://github.com/emscripten-core/emscripten/pull/23136 */
+        #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_MAJOR__ < 4
+        CORRADE_EXPECT_FAIL("Emscripten before 4.0.0 doesn't return EEXIST on mkdir(\".\") but fails instead.");
         #endif
         CORRADE_VERIFY(Path::make("."));
     }
@@ -1189,8 +1326,9 @@ void PathTest::makeDotDotDot() {
     /* Parent as well */
     CORRADE_VERIFY(Path::exists(".."));
     {
-        #ifdef CORRADE_TARGET_EMSCRIPTEN
-        CORRADE_EXPECT_FAIL("Emscripten doesn't return EEXIST on mdkir(\"..\") but fails instead.");
+        /* https://github.com/emscripten-core/emscripten/pull/23136 */
+        #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_MAJOR__ < 4
+        CORRADE_EXPECT_FAIL("Emscripten before 4.0.0 doesn't return EEXIST on mkdir(\"..\") but fails instead.");
         #endif
         CORRADE_VERIFY(Path::make(".."));
     }
@@ -1758,6 +1896,8 @@ void PathTest::executableLocation() {
 }
 
 void PathTest::executableLocationInvalid() {
+    /** @todo on Linux it fails if /proc/self/exe is inacessible, which might
+        happen with some overly-restrictive VMs, how to test that? */
     CORRADE_SKIP("Not sure how to test this.");
 }
 
@@ -1767,6 +1907,16 @@ void PathTest::executableLocationUtf8() {
 
 void PathTest::homeDirectory() {
     Containers::Optional<Containers::String> homeDirectory = Path::homeDirectory();
+
+    #ifdef CORRADE_TARGET_WINDOWS
+    /* Inverse of the check in homeDirectoryInvalid() below, see there for more
+       information */
+    if(!std::getenv("HOMEPATH") || !Path::exists(std::getenv("HOMEPATH"))) {
+        CORRADE_VERIFY(!homeDirectory);
+        CORRADE_SKIP("%HOMEPATH% doesn't exist, can't test.");
+    }
+    #endif
+
     CORRADE_VERIFY(homeDirectory);
     CORRADE_VERIFY(*homeDirectory);
     CORRADE_INFO("Home directory found as:" << homeDirectory);
@@ -1813,8 +1963,37 @@ void PathTest::homeDirectory() {
 }
 
 void PathTest::homeDirectoryInvalid() {
-    /* Could be tested by temporarily removing $HOME, but ... ahem */
+    #ifdef CORRADE_TARGET_WINDOWS
+    /* The query fails for system accounts, and system accounts apparently have
+       no access to environment, so checking if %HOMEPATH% is missing:
+       https://serverfault.com/questions/292040/win-service-running-under-localservice-account-cannot-access-environment-variabl
+
+       Additionally this can be reproduced by temporarily removing / renaming
+       the user directory, such as with `ren C:\Users\appveyor\Documents Doc`.
+       Then the environment variable is set, but the query fails. */
+    /** @todo Note that, however, %HOMEPATH% returns just `C:/Users/appveyor`,
+        so this check *isn't* enough. And there's no alternative way to query
+        the location other than what homeDirectory() itself does, so... */
+    if(std::getenv("HOMEPATH") && Path::exists(std::getenv("HOMEPATH")))
+        CORRADE_SKIP("%HOMEPATH% exists, can't test.");
+
+    Containers::String out;
+    Error redirectError{&out};
+    CORRADE_VERIFY(!Path::homeDirectory());
+    /** @todo It produces 1008 (An attempt was made to reference a token that
+        does not exist.) for the second failure, but the first failure in
+        homeDirectory() above is error 2 (The system cannot find the file
+        specified.). Am I triggering some other error in between, or does the
+        first lookup trigger some OS-internal update that makes it fail earlier
+        or differently the second time? */
+    CORRADE_COMPARE_AS(out,
+        "Utility::Path::homeDirectory(): can't retrieve FOLDERID_Documents: error 1008 (",
+        TestSuite::Compare::StringHasPrefix);
+
+    #else
+    /* On Unix could be tested by temporarily removing $HOME, but ... ahem */
     CORRADE_SKIP("Not sure how to test this.");
+    #endif
 }
 
 void PathTest::homeDirectoryUtf8() {
@@ -1823,6 +2002,16 @@ void PathTest::homeDirectoryUtf8() {
 
 void PathTest::configurationDirectory() {
     Containers::Optional<Containers::String> configurationDirectory = Path::configurationDirectory("Corrade");
+
+    #ifdef CORRADE_TARGET_WINDOWS
+    /* Inverse of the check in configurationDirectoryInvalid() below, see there
+       for more information */
+    if(!std::getenv("APPDATA") || !Path::exists(std::getenv("APPDATA"))) {
+        CORRADE_VERIFY(!configurationDirectory);
+        CORRADE_SKIP("%APPDATA% doesn't exist, can't test.");
+    }
+    #endif
+
     CORRADE_VERIFY(configurationDirectory);
     CORRADE_VERIFY(*configurationDirectory);
     CORRADE_INFO("Configuration dir found as:" << configurationDirectory);
@@ -1886,9 +2075,35 @@ void PathTest::configurationDirectory() {
 }
 
 void PathTest::configurationDirectoryInvalid() {
-    /* Could be tested by temporarily removing $XDG_CONFIG_HOME and $HOME, but
-       ... ahem */
+    #ifdef CORRADE_TARGET_WINDOWS
+    /* The query fails for system accounts, and system accounts apparently have
+       no access to environment, so checking if %HOMEPATH% is missing:
+       https://serverfault.com/questions/292040/win-service-running-under-localservice-account-cannot-access-environment-variabl
+
+       Additionally, similarly to homeDirectoryInvalid(), this can be
+       *theoretically* reproduced by temporarily removing / renaming the dir,
+       such as with `ren C:/Users/appveyor/AppData/Roaming Roam` (although in
+       my test that failed with "Access denied"). Then the environment variable
+       is set, but the query fails. */
+    if(std::getenv("APPDATA") && Path::exists(std::getenv("APPDATA")))
+        CORRADE_SKIP("%APPDATA% exists, can't test.");
+
+    Containers::String out;
+    Error redirectError{&out};
+    CORRADE_VERIFY(!Path::configurationDirectory("Corrade"));
+    /** @todo Assuming the same repro as with homeDirectoryInvalid(), i.e., a
+        rename, it should also produce an error 1008 for the second failure,
+        but the first failure in configurationDirectory() above would be error
+        2. Like with homeDirectory() failing, figure out what's going on. */
+    CORRADE_COMPARE_AS(out,
+        "Utility::Path::configurationDirectory(): can't retrieve FOLDERID_RoamingAppData: error 1008 (",
+        TestSuite::Compare::StringHasPrefix);
+
+    #else
+    /* On Unix could be tested by temporarily removing $XDG_CONFIG_HOME and
+       $HOME, but ... ahem */
     CORRADE_SKIP("Not sure how to test this.");
+    #endif
 }
 
 void PathTest::configurationDirectoryUtf8() {
@@ -1993,7 +2208,7 @@ void PathTest::listIterateRangeFor() {
     /* It should not happen that the original Optional somehow gets out of
        scope before we get to iterating the array contained in it. This is a
        yet-unsolved problem in C++ with std::optional and other STL containers:
-       http://josuttis.com/download/std/D2012R0_fix_rangebasedfor_201029.pdf
+       https://josuttis.com/download/std/D2012R0_fix_rangebasedfor_201029.pdf
 
        However, in this case, and unlike with std::make, the operator*()
        returns a T instead of T&&, and the reference lifetime extension takes
@@ -2057,10 +2272,11 @@ void PathTest::listSkipDirectoriesSymlinks() {
         CORRADE_EXPECT_FAIL_IF(!std::getenv("SIMULATOR_UDID"),
             "CTest is not able to run XCTest executables properly in the simulator.");
         #endif
-        #if !defined(CORRADE_TARGET_UNIX) && !defined(CORRADE_TARGET_EMSCRIPTEN)
-        /** @todo once implemented, can use Path::size() on file-symlink to
-            detect whether symlinks are preserved in the Git clone */
-        CORRADE_EXPECT_FAIL("Symlink support is implemented on Unix systems and Emscripten only.");
+        #ifndef CORRADE_TARGET_UNIX
+        /* See PathTest::sizeSymlink() for details. Can happen on Windows but
+           also on Emscripten when running under node.js on Windows. */
+        CORRADE_EXPECT_FAIL_IF(Path::size(Path::join(_testDirSymlink, "file-symlink")) != 11,
+            "Symlinks not preserved in the source tree, can't test.");
         #endif
         CORRADE_COMPARE_AS(*list, Containers::array<Containers::String>({
             "file", "file-symlink"
@@ -2092,10 +2308,11 @@ void PathTest::listSkipFilesSymlinks() {
         CORRADE_EXPECT_FAIL_IF(!std::getenv("SIMULATOR_UDID"),
             "CTest is not able to run XCTest executables properly in the simulator.");
         #endif
-        #if !defined(CORRADE_TARGET_UNIX) && !defined(CORRADE_TARGET_EMSCRIPTEN)
-        /** @todo once implemented, can use Path::size() on file-symlink to
-            detect whether symlinks are preserved in the Git clone */
-        CORRADE_EXPECT_FAIL("Symlink support is implemented on Unix systems and Emscripten only.");
+        #ifndef CORRADE_TARGET_UNIX
+        /* See PathTest::sizeSymlink() for details. Can happen on Windows but
+           also on Emscripten when running under node.js on Windows. */
+        CORRADE_EXPECT_FAIL_IF(Path::size(Path::join(_testDirSymlink, "file-symlink")) != 11,
+            "Symlinks not preserved in the source tree, can't test.");
         #endif
         CORRADE_COMPARE_AS(*list, Containers::array<Containers::String>({
             ".", "..", "dir", "dir-symlink"
@@ -2255,7 +2472,7 @@ void PathTest::listTrailingSlash() {
 }
 
 void PathTest::listUtf8Result() {
-    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_major__*10000 + __EMSCRIPTEN_minor__*100 + __EMSCRIPTEN_tiny__ >= 30103
+    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_MAJOR__*10000 + __EMSCRIPTEN_MINOR__*100 + __EMSCRIPTEN_TINY__ >= 30103
     /* Emscripten 3.1.3 changed the way files are bundled, putting them
        directly to WASM instead of Base64'd to the JS file. However, it broke
        UTF-8 handling, causing both a compile error (due to a syntax error in
@@ -2302,7 +2519,7 @@ void PathTest::listUtf8Result() {
 }
 
 void PathTest::listUtf8Path() {
-    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_major__*10000 + __EMSCRIPTEN_minor__*100 + __EMSCRIPTEN_tiny__ >= 30103
+    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_MAJOR__*10000 + __EMSCRIPTEN_MINOR__*100 + __EMSCRIPTEN_TINY__ >= 30103
     /* Emscripten 3.1.3 changed the way files are bundled, putting them
        directly to WASM instead of Base64'd to the JS file. However, it broke
        UTF-8 handling, causing both a compile error (due to a syntax error in
@@ -2341,7 +2558,7 @@ void PathTest::sizeEmpty() {
     Containers::String empty = Path::join(_testDir, "dir/dummy");
     CORRADE_VERIFY(Path::exists(empty));
 
-    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_major__*10000 + __EMSCRIPTEN_minor__*100 + __EMSCRIPTEN_tiny__ >= 20026 && __EMSCRIPTEN_major__*10000 + __EMSCRIPTEN_minor__*100 + __EMSCRIPTEN_tiny__ < 30103
+    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_MAJOR__*10000 + __EMSCRIPTEN_MINOR__*100 + __EMSCRIPTEN_TINY__ >= 20026 && __EMSCRIPTEN_MAJOR__*10000 + __EMSCRIPTEN_MINOR__*100 + __EMSCRIPTEN_TINY__ < 30103
     /* Emscripten 2.0.26+ has a problem in the file embedder, where zero-size
        files are reported as having 3 bytes. The changelog between 2.0.25 and
        2.0.26 doesn't mention anything related, the only related change I found
@@ -2399,6 +2616,9 @@ void PathTest::sizeSymlink() {
     Containers::Optional<std::size_t> size = Path::size(fileSymlink);
     CORRADE_VERIFY(size);
 
+    /* This is also used elsewhere as a CORRADE_EXPECT_FAIL_IF() condition, to
+       expect a symlink treatment failure if the files are not symlinks in the
+       first place */
     if(size != 11)
         CORRADE_SKIP("Symlinks not preserved in the source tree, can't test.");
 
@@ -2450,7 +2670,7 @@ void PathTest::sizeNonNullTerminated() {
 }
 
 void PathTest::sizeUtf8() {
-    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_major__*10000 + __EMSCRIPTEN_minor__*100 + __EMSCRIPTEN_tiny__ >= 30103
+    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_MAJOR__*10000 + __EMSCRIPTEN_MINOR__*100 + __EMSCRIPTEN_TINY__ >= 30103
     /* Emscripten 3.1.3 changed the way files are bundled, putting them
        directly to WASM instead of Base64'd to the JS file. However, it broke
        UTF-8 handling, causing both a compile error (due to a syntax error in
@@ -2613,7 +2833,7 @@ void PathTest::readEmpty() {
     Containers::Optional<Containers::Array<char>> data = Path::read(empty);
     CORRADE_VERIFY(data);
 
-    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_major__*10000 + __EMSCRIPTEN_minor__*100 + __EMSCRIPTEN_tiny__ >= 20026 && __EMSCRIPTEN_major__*10000 + __EMSCRIPTEN_minor__*100 + __EMSCRIPTEN_tiny__ < 30103
+    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_MAJOR__*10000 + __EMSCRIPTEN_MINOR__*100 + __EMSCRIPTEN_TINY__ >= 20026 && __EMSCRIPTEN_MAJOR__*10000 + __EMSCRIPTEN_MINOR__*100 + __EMSCRIPTEN_TINY__ < 30103
     /* Emscripten 2.0.26+ has a problem in the file embedder, where zero-size
        files are reported as having 3 bytes. The changelog between 2.0.25 and
        2.0.26 doesn't mention anything related, the only related change I found
@@ -2642,7 +2862,7 @@ void PathTest::readEmptyString() {
     CORRADE_VERIFY(string);
 
     {
-        #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_major__*10000 + __EMSCRIPTEN_minor__*100 + __EMSCRIPTEN_tiny__ >= 20026 && __EMSCRIPTEN_major__*10000 + __EMSCRIPTEN_minor__*100 + __EMSCRIPTEN_tiny__ < 30103
+        #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_MAJOR__*10000 + __EMSCRIPTEN_MINOR__*100 + __EMSCRIPTEN_TINY__ >= 20026 && __EMSCRIPTEN_MAJOR__*10000 + __EMSCRIPTEN_MINOR__*100 + __EMSCRIPTEN_TINY__ < 30103
         /* Emscripten 2.0.26+ has a problem in the file embedder, where
            zero-size files are reported as having 3 bytes. The changelog
            between 2.0.25 and 2.0.26 doesn't mention anything related, the only
@@ -2800,7 +3020,7 @@ void PathTest::readNonNullTerminated() {
 }
 
 void PathTest::readUtf8() {
-    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_major__*10000 + __EMSCRIPTEN_minor__*100 + __EMSCRIPTEN_tiny__ >= 30103
+    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_MAJOR__*10000 + __EMSCRIPTEN_MINOR__*100 + __EMSCRIPTEN_TINY__ >= 30103
     /* Emscripten 3.1.3 changed the way files are bundled, putting them
        directly to WASM instead of Base64'd to the JS file. However, it broke
        UTF-8 handling, causing both a compile error (due to a syntax error in
@@ -2938,7 +3158,7 @@ void PathTest::writeNonNullTerminated() {
 }
 
 void PathTest::writeUtf8() {
-    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_major__*10000 + __EMSCRIPTEN_minor__*100 + __EMSCRIPTEN_tiny__ >= 30103
+    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_MAJOR__*10000 + __EMSCRIPTEN_MINOR__*100 + __EMSCRIPTEN_TINY__ >= 30103
     /* Emscripten 3.1.3 changed the way files are bundled, putting them
        directly to WASM instead of Base64'd to the JS file. However, it broke
        UTF-8 handling, causing both a compile error (due to a syntax error in
@@ -3098,7 +3318,7 @@ void PathTest::appendNonNullTerminated() {
 }
 
 void PathTest::appendUtf8() {
-    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_major__*10000 + __EMSCRIPTEN_minor__*100 + __EMSCRIPTEN_tiny__ >= 30103
+    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_MAJOR__*10000 + __EMSCRIPTEN_MINOR__*100 + __EMSCRIPTEN_TINY__ >= 30103
     /* Emscripten 3.1.3 changed the way files are bundled, putting them
        directly to WASM instead of Base64'd to the JS file. However, it broke
        UTF-8 handling, causing both a compile error (due to a syntax error in
@@ -3126,7 +3346,8 @@ void PathTest::prepareFileToCopy() {
         return;
 
     Containers::Array<int> data{NoInit, 150000};
-    for(std::size_t i = 0; i != data.size(); ++i) data[i] = 4678641 + i;
+    for(std::size_t i = 0; i != data.size(); ++i)
+        data[i] = 4678641 + i;
 
     Path::write(Path::join(_writeTestDir, "copySource.dat"), data);
 }
@@ -3153,7 +3374,7 @@ void PathTest::copyEmpty() {
 
     CORRADE_VERIFY(Path::copy(source, destination));
 
-    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_major__*10000 + __EMSCRIPTEN_minor__*100 + __EMSCRIPTEN_tiny__ >= 20026 && __EMSCRIPTEN_major__*10000 + __EMSCRIPTEN_minor__*100 + __EMSCRIPTEN_tiny__ < 30103
+    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_MAJOR__*10000 + __EMSCRIPTEN_MINOR__*100 + __EMSCRIPTEN_TINY__ >= 20026 && __EMSCRIPTEN_MAJOR__*10000 + __EMSCRIPTEN_MINOR__*100 + __EMSCRIPTEN_TINY__ < 30103
     /* Emscripten 2.0.26+ has a problem in the file embedder, where zero-size
        files are reported as having 3 bytes. The changelog between 2.0.25 and
        2.0.26 doesn't mention anything related, the only related change I found
@@ -3288,7 +3509,7 @@ void PathTest::copyNonNullTerminated() {
 }
 
 void PathTest::copyUtf8() {
-    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_major__*10000 + __EMSCRIPTEN_minor__*100 + __EMSCRIPTEN_tiny__ >= 30103
+    #if defined(CORRADE_TARGET_EMSCRIPTEN) && __EMSCRIPTEN_MAJOR__*10000 + __EMSCRIPTEN_MINOR__*100 + __EMSCRIPTEN_TINY__ >= 30103
     /* Emscripten 3.1.3 changed the way files are bundled, putting them
        directly to WASM instead of Base64'd to the JS file. However, it broke
        UTF-8 handling, causing both a compile error (due to a syntax error in
@@ -3319,7 +3540,8 @@ void PathTest::prepareFileToBenchmarkCopy() {
 
     /* Append a megabyte file 50 times to create a 50MB file */
     Containers::Array<int> data{ValueInit, 256*1024};
-    for(std::size_t i = 0; i != data.size(); ++i) data[i] = 4678641 + i;
+    for(std::size_t i = 0; i != data.size(); ++i)
+        data[i] = 4678641 + i;
 
     for(std::size_t i = 0; i != 50; ++i)
         Path::append(Path::join(_writeTestDir, "copyBenchmarkSource.dat"), data);

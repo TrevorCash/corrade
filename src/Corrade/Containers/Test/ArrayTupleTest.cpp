@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -60,6 +60,7 @@ struct ArrayTupleTest: TestSuite::Tester {
 
     void constructTriviallyConstructibleNonTriviallyDestructible();
 
+    void constructStringNullTerminated();
     void constructStringInvalidFlags();
 
     void constructCopy();
@@ -97,6 +98,7 @@ ArrayTupleTest::ArrayTupleTest() {
 
               &ArrayTupleTest::constructTriviallyConstructibleNonTriviallyDestructible,
 
+              &ArrayTupleTest::constructStringNullTerminated,
               &ArrayTupleTest::constructStringInvalidFlags,
 
               &ArrayTupleTest::constructCopy,
@@ -118,6 +120,8 @@ ArrayTupleTest::ArrayTupleTest() {
               &ArrayTupleTest::emplaceConstructItemExplicitInCopyInitialization,
               &ArrayTupleTest::copyConstructPlainDeleterStruct});
 }
+
+using namespace Literals;
 
 void ArrayTupleTest::constructEmpty() {
     /* Const in order to verify const access */
@@ -246,8 +250,19 @@ template<int align> struct alignas(align) Aligned {
         ++destructed;
     }
 
+    /* https://github.com/llvm/llvm-project/commit/fd11cf430e5a9fd11f93bdcc929a1ce8dfa60f37
+       looks like it cannot see that all actual instantiations of this template
+       are both setting *and* using the variable? Ugh. */
+    /** @todo revisit with newer Clang versions */
+    #if defined(CORRADE_TARGET_CLANG) && __clang_major__ >= 23
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wunused-but-set-global"
+    #endif
     static int constructed;
     static int destructed;
+    #if defined(CORRADE_TARGET_CLANG) && __clang_major__ >= 23
+    #pragma clang diagnostic pop
+    #endif
 };
 
 template<int align> int Aligned<align>::constructed = 0;
@@ -380,13 +395,16 @@ void ArrayTupleTest::construct() {
 
         /* Check that trivial types are zero-init'd and nontrivial had their
            constructor called */
-        for(char i: chars) CORRADE_COMPARE(i, 0);
+        for(char i: chars)
+            CORRADE_COMPARE(i, 0);
         CORRADE_COMPARE(NonCopyable::constructed, 4);
         CORRADE_COMPARE(NonCopyable::destructed, 0);
-        for(int i: ints) CORRADE_COMPARE(i, 0);
+        for(int i: ints)
+            CORRADE_COMPARE(i, 0);
         CORRADE_COMPARE(Aligned<16>::constructed, 3);
         CORRADE_COMPARE(Aligned<16>::destructed, 0);
-        for(double i: strided) CORRADE_COMPARE(i, 0.0);
+        for(double i: strided)
+            CORRADE_COMPARE(i, 0.0);
         /* MSVC 2015 needs the {}s, FFS */
         for(auto i: strided3D) {
             for(auto j: i) {
@@ -403,8 +421,10 @@ void ArrayTupleTest::construct() {
             for(std::size_t j = 0; j != bitsStrided3D.size()[1]; ++j)
                 for(std::size_t k = 0; k != bitsStrided3D.size()[2]; ++k)
                     CORRADE_VERIFY(!bitsStrided3D[i][j][k]);
-        for(char i: stringNullTerminated) CORRADE_COMPARE(i, 0);
-        for(char i: string) CORRADE_COMPARE(i, 0);
+        for(char i: stringNullTerminated)
+            CORRADE_COMPARE(i, 0);
+        for(char i: string)
+            CORRADE_COMPARE(i, 0);
     }
 
     /* Check that non-trivial destructors were called */
@@ -419,7 +439,8 @@ void ArrayTupleTest::constructNoInit() {
     NonCopyable::destructed = 0;
 
     char storage[357];
-    for(char& i: storage) i = '\xce';
+    for(char& i: storage)
+        i = '\xce';
 
     CORRADE_VERIFY(true); /* to capture correct function name */
 
@@ -473,13 +494,16 @@ void ArrayTupleTest::constructNoInit() {
 
         /* Verify that NoInit stayed at 0xce, while the ValueInit are 0x0 and
            only the constructors for the ValueInit'd view were called */
-        for(char i: chars) CORRADE_COMPARE(i, '\xce');
-        for(char i: initializedChars) CORRADE_COMPARE(i, 0);
+        for(char i: chars)
+            CORRADE_COMPARE(i, '\xce');
+        for(char i: initializedChars)
+            CORRADE_COMPARE(i, 0);
         for(auto i: arrayCast<2, char>(strided))
             CORRADE_COMPARE_AS(i, stridedArrayView({
                 '\xce', '\xce', '\xce', '\xce', '\xce', '\xce', '\xce', '\xce'
             }), TestSuite::Compare::Container);
-        for(double i: initializedStrided) CORRADE_COMPARE(i, 0.0);
+        for(double i: initializedStrided)
+            CORRADE_COMPARE(i, 0.0);
         /* MSVC 2015 needs the {}s, FFS */
         for(auto i: arrayCast<4, char>(strided3D)) {
             for(auto j: i) {
@@ -531,9 +555,11 @@ void ArrayTupleTest::constructNoInit() {
             CORRADE_COMPARE(i, 0);
         CORRADE_COMPARE(initializedStringNullTerminated.flags(), StringViewFlag::NullTerminated);
         CORRADE_COMPARE(initializedStringNullTerminated[initializedStringNullTerminated.size()], 0);
-        for(char i: string) CORRADE_COMPARE(i, '\xce');
+        for(char i: string)
+            CORRADE_COMPARE(i, '\xce');
         CORRADE_COMPARE(string.flags(), StringViewFlag{});
-        for(char i: initializedString) CORRADE_COMPARE(i, 0);
+        for(char i: initializedString)
+            CORRADE_COMPARE(i, 0);
         CORRADE_COMPARE(initializedString.flags(), StringViewFlag{});
 
         /* Construct the remaining NonCopyables, so their destruction is
@@ -828,7 +854,7 @@ void ArrayTupleTest::constructTriviallyDestructibleStatelessDeleter() {
 
         /* The stateless deleter is used directly, as there's nothing to
            non-trivially destruct */
-        CORRADE_VERIFY(data.deleter() == deleter);
+        CORRADE_COMPARE(data.deleter(), deleter);
 
         /* And no metadata at the front here either */
         CORRADE_COMPARE(static_cast<void*>(ints.data()), data.data());
@@ -937,6 +963,34 @@ void ArrayTupleTest::constructTriviallyConstructibleNonTriviallyDestructible() {
     CORRADE_COMPARE(NonTriviallyDestructible::destructorCallCount, 5);
 }
 
+void ArrayTupleTest::constructStringNullTerminated() {
+    /* While the construct() and constructNoInit() cases check with
+       NullTerminated strings, they use the default system allocator which may
+       just give a zero-initialized block of memory to the internals, thus
+       satisfying StringView's null-terminated assertion. To make sure the
+       behavior is correctly tested even without Address Sanitizer and such
+       present, the following uses a custom allocator providing a definitely
+       not zeroed-out memory. */
+
+    MutableStringView noInit, valueInit;
+
+    char preallocated[] = "this!memory!is!not!zeroed!at!all!";
+    ArrayTuple data{
+        {{Corrade::NoInit, 4, noInit, StringViewFlag::NullTerminated},
+         {Corrade::ValueInit, 6, valueInit, StringViewFlag::NullTerminated}},
+        [&](std::size_t, std::size_t) -> Containers::Pair<char*, void(*)(char*, std::size_t)> {
+            return {preallocated, [](char*, std::size_t) {}};
+        }
+    };
+    CORRADE_COMPARE(StringView{noInit}, "this");
+    CORRADE_COMPARE(noInit.flags(), StringViewFlag::NullTerminated);
+    CORRADE_COMPARE(noInit[noInit.size()], '\0');
+
+    CORRADE_COMPARE(StringView{valueInit}, "\0\0\0\0\0\0"_s);
+    CORRADE_COMPARE(valueInit.flags(), StringViewFlag::NullTerminated);
+    CORRADE_COMPARE(valueInit[valueInit.size()], '\0');
+}
+
 void ArrayTupleTest::constructStringInvalidFlags() {
     CORRADE_SKIP_IF_NO_ASSERT();
 
@@ -976,7 +1030,7 @@ void ArrayTupleTest::constructMove() {
     CORRADE_VERIFY(!a.deleter());
     CORRADE_COMPARE(b.data(), static_cast<void*>(preallocated));
     CORRADE_COMPARE(b.size(), 20);
-    CORRADE_VERIFY(b.deleter() == deleter);
+    CORRADE_COMPARE(b.deleter(), deleter);
 
     ArrayTuple c;
     c = Utility::move(b);
@@ -985,7 +1039,7 @@ void ArrayTupleTest::constructMove() {
     CORRADE_VERIFY(!b.deleter());
     CORRADE_COMPARE(c.data(), static_cast<void*>(preallocated));
     CORRADE_COMPARE(c.size(), 20);
-    CORRADE_VERIFY(c.deleter() == deleter);
+    CORRADE_COMPARE(c.deleter(), deleter);
 
     CORRADE_VERIFY(std::is_nothrow_move_constructible<ArrayTuple>::value);
     CORRADE_VERIFY(std::is_nothrow_move_assignable<ArrayTuple>::value);
@@ -1054,7 +1108,8 @@ void ArrayTupleTest::constructBig() {
 
         /* Check that trivial types are zero-init'd and nontrivial had their
            constructor called */
-        for(char i: chars) CORRADE_COMPARE(i, 0);
+        for(char i: chars)
+            CORRADE_COMPARE(i, 0);
         CORRADE_COMPARE(Big::constructed, 7);
         CORRADE_COMPARE(Big::destructed, 0);
     }
@@ -1158,8 +1213,8 @@ void ArrayTupleTest::convertArray() {
         );
 
         /* The stateless deleter is used directly, as there's nothing to
-        non-trivially destruct */
-        CORRADE_VERIFY(data.deleter() == deleter);
+           non-trivially destruct */
+        CORRADE_COMPARE(data.deleter(), deleter);
     }
 
     /* Check the deleter was called just once */

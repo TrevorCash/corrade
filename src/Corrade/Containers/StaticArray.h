@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -52,6 +52,7 @@ template<std::size_t size_, class T> struct StaticArrayData<size_, T, true> {
     template<class U = T, typename std::enable_if<std::is_constructible<U, Corrade::NoInitT>::value, int>::type = 0> explicit StaticArrayData(Corrade::NoInitT): StaticArrayData{Corrade::NoInit, typename GenerateSequence<size_>::Type{}} {}
     template<std::size_t... sequence, class U = T, typename std::enable_if<std::is_constructible<U, Corrade::NoInitT>::value, int>::type = 0> explicit StaticArrayData(Corrade::NoInitT noInit, Sequence<sequence...>): _data{T{(&noInit)[0*sequence]}...} {}
 
+    #ifdef CORRADE_BUILD_DEPRECATED /* Used only by the deprecated constructor */
     /* Compared to StaticArrayData<size_, T, false> it does the right thing by
        default. MSVC 2015, 2019 and 2022 (but not 2017, _MSC_VER=191x)
        complains that the constexpr constructor doesn't initialize all members
@@ -65,6 +66,7 @@ template<std::size_t size_, class T> struct StaticArrayData<size_, T, true> {
     #else
     template<class U = T, typename std::enable_if<std::is_trivially_constructible<U>::value, int>::type = 0> explicit StaticArrayData(Corrade::DefaultInitT) {}
     template<class U = T, typename std::enable_if<!std::is_trivially_constructible<U>::value, int>::type = 0> constexpr explicit StaticArrayData(Corrade::DefaultInitT): _data{} {}
+    #endif
     #endif
 
     /* Compared to StaticArrayData<size_, T, false>, there's no way to trigger
@@ -93,35 +95,24 @@ template<std::size_t size_, class T> struct StaticArrayData<size_, T, false> {
 
     /* Compared to StaticArrayData<size_, T, true> a default constructor has to
        be called on the union members. If the default constructor is trivial,
-       the StaticArrayData<size_, T, true> base was picked instead. */
-    explicit StaticArrayData(Corrade::DefaultInitT)
-        /* GCC 5.3 is not able to initialize non-movable types inside
-           constructor initializer list. Reported here, fixed on 10.3:
-            https://gcc.gnu.org/bugzilla/show_bug.cgi?id=70395
+       the StaticArrayData<size_, T, true> base was picked instead.
 
-           In both cases, the () instead of {} works around a featurebug in C++
-           where new T{} doesn't work for an explicit defaulted constructor.
-           For details see constructHelpers.h and
-           StaticArrayTest::constructorExplicitInCopyInitialization(). */
-        #if !defined(CORRADE_TARGET_GCC) || defined(CORRADE_TARGET_CLANG) || __GNUC__*100 + __GNUC_MINOR__ >= 10003
-        : _data() {}
-        #else
-        {
-            for(T& i: _data) new(&i) T();
-        }
-        #endif
-
-    /* The () instead of {} works around a featurebug in C++ where new T{}
+       The () instead of {} works around a featurebug in C++ where new T{}
        doesn't work for an explicit defaulted constructor. Doesn't apply to
        StaticArrayData<size_, T, true>. For details see constructHelpers.h and
        StaticArrayTest::constructorExplicitInCopyInitialization(). */
+    #ifdef CORRADE_BUILD_DEPRECATED /* Used only by the deprecated constructor */
+    explicit StaticArrayData(Corrade::DefaultInitT): _data() {}
+    #endif
     explicit StaticArrayData(Corrade::ValueInitT): _data() {}
 
     /* Same as in StaticArrayData<size_, T, true> */
     template<class ...Args> explicit StaticArrayData(Corrade::InPlaceInitT, Args&&... args): _data{Utility::forward<Args>(args)...} {}
     template<std::size_t ...sequence> explicit StaticArrayData(Corrade::InPlaceInitT, Implementation::Sequence<sequence...>, const T(&data)[sizeof...(sequence)]): _data{data[sequence]...} {}
     /* See StaticArrayTest::constructArrayMove() for details why it has to be
-       disabled */
+       disabled. Additionally, GCC 10 and 11 fail to pick the && overload due
+       to https://gcc.gnu.org/bugzilla/show_bug.cgi?id=104996, which was fixed
+       in GCC 12. GCC 9 works. The test is thus skipped on those versions. */
     #ifndef CORRADE_MSVC2017_COMPATIBILITY
     template<std::size_t ...sequence> explicit StaticArrayData(Corrade::InPlaceInitT, Implementation::Sequence<sequence...>, T(&&data)[sizeof...(sequence)]): _data{Utility::move(data[sequence])...} {}
     #endif
@@ -140,8 +131,14 @@ template<std::size_t size_, class T> struct StaticArrayData<size_, T, false> {
 };
 
 template<std::size_t size_, class T> using StaticArrayDataFor = StaticArrayData<size_, T,
-    #ifdef CORRADE_NO_STD_IS_TRIVIALLY_TRAITS
-    __has_trivial_constructor(T)
+    /* std::is_trivially_constructible fails for (template) types where default
+       constructor isn't usable in libstdc++ before version 8, OTOH
+       std::is_trivial is deprecated in C++26 so can't use that one either.
+       Furthermore, libstdc++ before 6.1 doesn't have _GLIBCXX_RELEASE, so
+       there comparison will ealuate to 0 < 8 and pass as well. Repro case in
+       StaticArrayTest::constructNoInitNoDefaultConstructor(). */
+    #if defined(CORRADE_TARGET_LIBSTDCXX) && _GLIBCXX_RELEASE < 8
+    std::is_trivial<T>::value
     #else
     std::is_trivially_constructible<T>::value
     #endif
@@ -178,11 +175,6 @@ The array is by default *value-initialized*, which means that trivial types
 are zero-initialized and the default constructor is called on other types. It
 is possible to initialize the array in a different way using so-called *tags*:
 
--   @ref StaticArray(DefaultInitT) leaves trivial types uninitialized
-    and calls the default constructor elsewhere. In other words,
-    @cpp T array[size] @ce. Because of the differing behavior for trivial types
-    it's better to explicitly use either the @ref ValueInit or @ref NoInit
-    variants instead.
 -   @ref StaticArray(ValueInitT) is equivalent to the implicit parameterless
     constructor, zero-initializing trivial types and calling the default
     constructor elsewhere. Useful when you want to make the choice appear
@@ -205,7 +197,9 @@ is possible to initialize the array in a different way using so-called *tags*:
     types when you'll be overwriting the contents anyway, for non-trivial types
     this is the dangerous option and you need to call the constructor on all
     elements manually using placement new, @ref std::uninitialized_copy() or
-    similar --- see the constructor docs for an example.
+    similar --- see the constructor docs for an example. In other words,
+    @cpp char array[size*sizeof(T)] @ce for non-trivial types to circumvent
+    default construction and @cpp T array[size] @ce for trivial types.
 
 @snippet Containers.cpp StaticArray-usage-initialization
 
@@ -290,20 +284,24 @@ template<std::size_t size_, class T> class StaticArray: Implementation::StaticAr
         };
         typedef T Type;     /**< @brief Element type */
 
+        #ifdef CORRADE_BUILD_DEPRECATED
         /**
          * @brief Construct a default-initialized array
+         * @m_deprecated_since_latest Because C++'s default initialization
+         *      keeps trivial types not initialized, using it is unnecessarily
+         *      error prone. Use either @ref StaticArray(ValueInitT) or
+         *      @ref StaticArray(NoInitT) instead to make the choice about
+         *      content initialization explicit.
          *
          * Creates array of given size, the contents are default-initialized
-         * (i.e., trivial types are not initialized). Because of the differing
-         * behavior for trivial types it's better to explicitly use either the
-         * @ref StaticArray(ValueInitT) or the @ref StaticArray(NoInitT)
-         * variant instead.
+         * (i.e., trivial types are not initialized).
          * @see @relativeref{Corrade,DefaultInit},
          *      @ref StaticArray(DirectInitT, Args&&... args),
          *      @ref StaticArray(InPlaceInitT, Args&&... args),
-         *      @ref std::is_trivial
+         *      @ref std::is_trivially_constructible
          */
-        constexpr explicit StaticArray(Corrade::DefaultInitT): Implementation::StaticArrayDataFor<size_, T>{Corrade::DefaultInit} {}
+        constexpr explicit CORRADE_DEPRECATED("use StaticArray(ValueInitT) or StaticArray(NoInitT) instead") StaticArray(Corrade::DefaultInitT): Implementation::StaticArrayDataFor<size_, T>{Corrade::DefaultInit} {}
+        #endif
 
         /**
          * @brief Construct a value-initialized array
@@ -312,13 +310,12 @@ template<std::size_t size_, class T> class StaticArray: Implementation::StaticAr
          * (i.e., trivial types are zero-initialized, default constructor
          * called otherwise). This is the same as @ref StaticArray().
          * @see @relativeref{Corrade,ValueInit},
-         *      @ref StaticArray(DefaultInitT),
          *      @ref StaticArray(NoInitT),
          *      @ref StaticArray(DirectInitT, Args&&... args),
          *      @ref StaticArray(InPlaceInitT, Args&&... args),
          *      @ref StaticArray(InPlaceInitT, const T(&)[size]),
          *      @ref StaticArray(InPlaceInitT, T(&&)[size]),
-         *      @ref std::is_trivial
+         *      @ref std::is_trivially_constructible
          */
         constexpr explicit StaticArray(Corrade::ValueInitT): Implementation::StaticArrayDataFor<size_, T>{Corrade::ValueInit} {}
 
@@ -330,11 +327,12 @@ template<std::size_t size_, class T> class StaticArray: Implementation::StaticAr
          * you need to call custom constructors in a way that's not expressible
          * via any other @ref StaticArray constructor.
          *
-         * For trivial types is equivalent to @ref StaticArray(DefaultInitT).
-         * For non-trivial types, the class will explicitly call the destructor
-         * on *all elements* --- which means that for non-trivial types you're
-         * expected to construct all elements using placement new (or for
-         * example @ref std::uninitialized_copy()) in order to avoid calling
+         * For trivial types is equivalent to @cpp T array[size] @ce (as
+         * opposed to @cpp T array[size]{} @ce). For non-trivial types, class
+         * destruction will explicitly call the destructor on *all elements*
+         * --- which means that for non-trivial types you're expected to
+         * construct all elements using placement new (or for example
+         * @ref std::uninitialized_copy()) in order to avoid calling
          * destructors on uninitialized memory:
          *
          * @snippet Containers.cpp StaticArray-NoInit
@@ -345,7 +343,7 @@ template<std::size_t size_, class T> class StaticArray: Implementation::StaticAr
          *      @ref StaticArray(InPlaceInitT, Args&&... args),
          *      @ref StaticArray(InPlaceInitT, const T(&)[size]),
          *      @ref StaticArray(InPlaceInitT, T(&&)[size]),
-         *      @ref std::is_trivial
+         *      @ref std::is_trivially_constructible
          */
         explicit StaticArray(Corrade::NoInitT): Implementation::StaticArrayDataFor<size_, T>{Corrade::NoInit} {}
 
@@ -440,7 +438,7 @@ template<std::size_t size_, class T> class StaticArray: Implementation::StaticAr
          * @brief Construct a value-initialized array
          *
          * Alias to @ref StaticArray(ValueInitT).
-         * @see @ref StaticArray(DefaultInitT)
+         * @see @ref StaticArray(NoInitT)
          */
         constexpr /*implicit*/ StaticArray(): Implementation::StaticArrayDataFor<size_, T>{Corrade::ValueInit} {}
 
@@ -526,22 +524,59 @@ template<std::size_t size_, class T> class StaticArray: Implementation::StaticAr
             return Implementation::StaticArrayViewConverter<size_, const T, U>::to(*this);
         }
 
-        #ifndef CORRADE_MSVC_COMPATIBILITY
+        #if !defined(CORRADE_MSVC_COMPATIBILITY) || !defined(CORRADE_BUILD_DEPRECATED)
         /** @brief Whether the array is non-empty */
         /* Disabled on MSVC w/o /permissive- to avoid ambiguous operator+()
            when doing pointer arithmetic. */
+        /** @todo remove the ifdef once the operators below are gone */
         constexpr explicit operator bool() const { return true; }
+        #endif
+
+        #ifdef CORRADE_BUILD_DEPRECATED
+        #if !defined(DOXYGEN_GENERATING_OUTPUT) && !defined(CORRADE_MSVC_COMPATIBILITY)
+        /* Added only so `if(!array)` and `if(array)` doesn't produce a
+           deprecation warning due to a non-const operator T* being picked over
+           a const operator bool. On MSVC w/o /permissive- these would cause
+           ambiguity so instead the operator T*() omits the deprecation warning
+           altogether to not produce warning noise for valid usage. */
+        /** @todo remove once the operators below are gone */
+        explicit operator bool() { return true; }
         #endif
 
         /* `char* a = Containers::StaticArray<char>(5); a[3] = 5;` would result
            in instant segfault, disallowing it in the following conversion
            operators */
 
-        /** @brief Conversion to array type */
-        /*implicit*/ operator T*() & { return this->_data; }
+        /**
+         * @brief Conversion to array type
+         * @m_deprecated_since_latest Use @ref data() or @ref begin() instead,
+         *      which conveys the intent clearer than an implicit pointer
+         *      conversion.
+         */
+        /*implicit*/
+        #ifndef CORRADE_MSVC_COMPATIBILITY
+        /* On MSVC w/o /permissive- boolean conversion has to use operator T*()
+           as well, as operator bool() causes an ambiguity, so the deprecation
+           warning has to be omitted to not produce warning noise for valid
+           usage, sorry. *Please* regularly use at least one other compiler or
+           build with CORRADE_BUILD_DEPRECATED disabled from time to time to
+           catch use of these deprecated APIs in your code. */
+        CORRADE_DEPRECATED("use data() or begin() instead")
+        #endif
+        operator T*() & { return this->_data; }
 
-        /** @overload */
-        constexpr /*implicit*/ operator const T*() const & { return this->_data; }
+        /**
+         * @brief Conversion to array type
+         * @m_deprecated_since_latest Use @ref data() or @ref begin() instead,
+         *      which conveys the intent clearer than an implicit pointer
+         *      conversion.
+         */
+        constexpr /*implicit*/
+        #ifndef CORRADE_MSVC_COMPATIBILITY /* see above */
+        CORRADE_DEPRECATED("use data() or begin() instead")
+        #endif
+        operator const T*() const & { return this->_data; }
+        #endif
 
         /** @brief Array data */
         T* data() { return this->_data; }
@@ -597,7 +632,7 @@ template<std::size_t size_, class T> class StaticArray: Implementation::StaticAr
         /**
          * @brief First element
          *
-         * @see @ref begin(), @ref operator[]()
+         * @see @ref isEmpty(), @ref begin(), @ref operator[]()
          */
         T& front() { return this->_data[0]; }
         /** @overload */
@@ -606,7 +641,7 @@ template<std::size_t size_, class T> class StaticArray: Implementation::StaticAr
         /**
          * @brief Last element
          *
-         * @see @ref end(), @ref operator[]()
+         * @see @ref isEmpty(), @ref end(), @ref operator[]()
          */
         T& back() { return this->_data[size_ - 1]; }
         /** @overload */
@@ -1009,8 +1044,9 @@ template<std::size_t size_, class T> class StaticArray: Implementation::StaticAr
 @m_since_latest
 
 Convenience alternative to @cpp StaticArray<1, T> @ce. See @ref StaticArray for
-more information. Useful in case you want to take advantage of the @ref NoInit
-tag on an arbitrary type and @ref Optional doesn't suit the use case.
+more information. Useful in case you want to take advantage of the
+@relativeref{Corrade,NoInit} tag on an arbitrary type and @ref Optional doesn't
+suit the use case.
 @see @ref Array2, @ref Array3, @ref Array4, @ref ArrayView2, @ref ArrayView3,
     @ref ArrayView4
 */

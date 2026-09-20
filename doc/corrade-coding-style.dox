@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -38,9 +38,9 @@ Nothing is worse than rule that hurts productivity instead of improving it.
 You can also take inspiration from other thoroughly written coding style
 guidelines of large projects:
 
--   LLVM: http://llvm.org/docs/CodingStandards.html
--   Qt: http://qt-project.org/wiki/Qt_Coding_Style
--   Chromium: http://dev.chromium.org/developers/coding-style/cpp-dos-and-donts
+-   LLVM: https://llvm.org/docs/CodingStandards.html
+-   Qt: https://wiki.qt.io/Qt_Coding_Style
+-   Chromium: https://chromium.googlesource.com/chromium/src/+/HEAD/styleguide/c++/c++-dos-and-donts.md
 
 In general, the main aim of this style is:
 
@@ -403,15 +403,36 @@ if(expression) {
 }
 @endcode
 
-If the block is only one statement and short enough (&lt;80 columns), it can be
-on the same line:
+If a function block is only one statement and short enough (&lt;80 columns), it
+can be on the same line:
 
 @code{.cpp}
 void setProcessingDelay(int delay) { processingDelay = delay; }
 @endcode
 
+On the other hand, single-statement @cpp if @ce, @cpp while @ce and
+@cpp for @ce blocks should always have the contents on the next line, to make
+code coverage properly report if the branch contents aren't taken. Wrapping
+them in braces is discouraged, as it only makes the code longer and doesn't
+really prevent bugs anyway.
+
 @code{.cpp}
-if(!initialized) return false;
+if(!initialized)
+    return false;
+
+for(int& i: data)
+    i = 1337;
+@endcode
+
+Single-statement contents can be on the same line if they wouldn't affect code
+coverage anyway, such as when they're excluded from it, when they're inside a
+macro that's reported as a single line, or when doing so would seriously hurt
+readability. The following formatting is also fine, because ultimately it's
+the assignment expression that matters for code coverage:
+
+@code{.cpp}
+if(initialize) for(int& i: data)
+    i = 1337;
 @endcode
 
 The only exceptions when opening braces are on the following line is when the
@@ -968,7 +989,7 @@ and in most cases only for internal use.
 
 @subsection corrade-coding-style-documentation-commands Special documentation commands
 
-All @c \@m_* commands from the [m.css theme](http://mcss.mosra.cz/doxygen/#theme-specific-commands)
+All @c \@m_* commands from the [m.css theme](https://mcss.mosra.cz/doxygen/#theme-specific-commands)
 are available.
 
 @subsubsection corrade-coding-style-documentation-commands-code Code

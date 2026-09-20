@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -68,15 +68,14 @@ void AbstractPlugin::finalize() {}
 
 AbstractPlugin::AbstractPlugin(): _state{InPlaceInit} {}
 
-AbstractPlugin::AbstractPlugin(AbstractManager& manager, const Containers::StringView& plugin): _state{InPlaceInit} {
+AbstractPlugin::AbstractPlugin(AbstractManager& manager): _state{InPlaceInit} {
     _state->manager = &manager;
+}
+
+AbstractPlugin::AbstractPlugin(AbstractManager& manager, const Containers::StringView& plugin): AbstractPlugin{manager} {
     _state->plugin = Containers::String::nullTerminatedGlobalView(plugin);
     manager.registerInstance(plugin, *this, _state->metadata);
     _state->configuration = _state->metadata->configuration();
-}
-
-AbstractPlugin::AbstractPlugin(AbstractManager& manager): _state{InPlaceInit} {
-    _state->manager = &manager;
 }
 
 AbstractPlugin::AbstractPlugin(AbstractPlugin&& other) noexcept: _state{Utility::move(other._state)} {
@@ -106,7 +105,7 @@ AbstractPlugin::~AbstractPlugin() {
 bool AbstractPlugin::canBeDeleted() { return false; }
 
 Containers::StringView AbstractPlugin::plugin() const {
-    CORRADE_ASSERT(_state, "PluginManager::AbstractPlugin::plugin(): can't be called on a moved-out plugin", _state->plugin);
+    CORRADE_ASSERT(_state, "PluginManager::AbstractPlugin::plugin(): can't be called on a moved-out plugin", {});
     return _state->plugin;
 }
 
@@ -145,7 +144,8 @@ Containers::Array<Containers::String> implicitPluginSearchPaths(const Containers
     arrayReserve(out, 3);
     #endif
 
-    if(hardcodedPath) arrayAppend(out, Containers::String::nullTerminatedGlobalView(hardcodedPath));
+    if(hardcodedPath)
+        arrayAppend(out, Containers::String::nullTerminatedGlobalView(hardcodedPath));
     #ifdef CORRADE_TARGET_APPLE
     arrayAppend(out, Utility::Path::join("../PlugIns"_s, relativePath));
     #endif

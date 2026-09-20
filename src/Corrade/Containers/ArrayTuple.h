@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -103,11 +103,12 @@ or a @ref BasicStringView "MutableStringView". See constructor overloads of the
 @section Containers-ArrayTuple-nontrivial Storing non-trivial types
 
 The usage isn't limited to just trivial types --- by default (or if you
-explicitly specify @ref ValueInit) it'll value-construct the items and will
-also correctly call destructors at the end. Moreover, each sub-array is padded
-to match alignment requirements of its type. You can also specify @ref NoInit,
-which will keep the contents uninitialized, allowing you to use a non-default
-constructor or skip zero-initialization of builtin types when not necessary:
+explicitly specify @relativeref{Corrade,ValueInit}) it'll value-construct the
+items and will also correctly call destructors at the end. Moreover, each
+sub-array is padded to match alignment requirements of its type. You can also
+specify @relativeref{Corrade,NoInit}, which will keep the contents
+uninitialized, allowing you to use a non-default constructor or skip
+zero-initialization of builtin types when not necessary:
 
 @snippet Containers.cpp ArrayTuple-usage-nontrivial
 
@@ -297,7 +298,7 @@ namespace Implementation {
 
 namespace Implementation {
     /* To avoid including <cstring> */
-    CORRADE_UTILITY_EXPORT void arrayTupleMemset(void* data, std::size_t size);
+    CORRADE_UTILITY_EXPORT void arrayTupleMemset(void* data, std::size_t elementSize, std::size_t elementCount);
 }
 
 /**
@@ -517,6 +518,10 @@ class CORRADE_UTILITY_EXPORT ArrayTuple::Item {
         /* Common code shared by ArrayView, StridedArrayView, BitArrayView and
            StringView variants */
         template<class T, typename std::enable_if<!
+            /* Unlike with Array, where is_trivial is used instead of
+               is_trivially_constructible to work around issues on libstdc++
+               before version 8, here such a case wouldn't compile anyway due
+               to the static_assert below so it's less of a problem */
             #ifdef CORRADE_NO_STD_IS_TRIVIALLY_TRAITS
             std::has_trivial_default_constructor<T>::value
             #else
@@ -525,10 +530,11 @@ class CORRADE_UTILITY_EXPORT ArrayTuple::Item {
         || !std::is_trivially_destructible<T>::value, int>::type = 0> explicit Item(Corrade::ValueInitT, std::size_t size, T*& destinationPointer): Item{Corrade::NoInit, size, destinationPointer} {
             static_assert(std::is_default_constructible<T>::value,
                 "can't default-init a type with no default constructor, use NoInit instead and manually initialize each item");
-            _constructor = [](void* data, std::size_t) {
-                /* Default-construct the T and work around various compiler
-                   issues, see construct() for details */
-                Implementation::construct(*static_cast<T*>(data));
+            _constructor = [](void* data, std::size_t, std::size_t elementCount) {
+                for(T *i = static_cast<T*>(data), *end = i + elementCount; i != end; ++i)
+                    /* Default-construct the T and work around various compiler
+                       issues, see construct() for details */
+                    Implementation::construct(*static_cast<T*>(i));
             };
         }
 
@@ -540,6 +546,11 @@ class CORRADE_UTILITY_EXPORT ArrayTuple::Item {
            See the constructTriviallyConstructibleNonTriviallyDestructible()
            test case for details. */
         template<class T, typename std::enable_if<
+            /* Unlike with Array, where is_trivial is used instead of
+               is_trivially_constructible to work around issues on libstdc++
+               before version 8, here such a case wouldn't compile anyway
+               because it'd pick the above overload and fail on the
+               static_assert so it's less of a problem */
             #ifdef CORRADE_NO_STD_IS_TRIVIALLY_TRAITS
             std::has_trivial_default_constructor<T>::value
             #else
@@ -625,13 +636,17 @@ class CORRADE_UTILITY_EXPORT ArrayTuple::Item {
             _elementCount;
 
         /* Constructor is null if using the NoInit constructor; in case of
-           memory deleters it's null always. Second argument is
-           _elementSize. */
-        void(*_constructor)(void*, std::size_t);
+           memory deleters it's null always. It's called once for all elements
+           to allow the compiler to optimize the contents, such as turning them
+           into a memset. */
+        void(*_constructor)(void* data, std::size_t elementSize, std::size_t elementCount);
 
         /* Destructor is set for non-trivially-destructible types; in case of
-           memory deleters only if it's a default or a stateful deleter */
-        void(*_destructor)(char*, std::size_t);
+           memory deleters only if it's a default or a stateful deleter. While
+           the constructor is called once for all elements, the deleter is not
+           as storing non-trivially-destructible data is far less common and
+           it isn't worth the extra testing effort. */
+        void(*_destructor)(char*, std::size_t elementSize);
 
         /* Output pointer is always set */
         void** _destinationPointer;

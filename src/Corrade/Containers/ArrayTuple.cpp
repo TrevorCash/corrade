@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -175,7 +175,8 @@ ArrayTuple::ArrayTuple(ArrayTuple&& other) noexcept: _data{other._data}, _size{o
 }
 
 ArrayTuple::~ArrayTuple() {
-    if(_deleter) _deleter(_data, _size);
+    if(_deleter)
+        _deleter(_data, _size);
     else delete[] _data;
 }
 
@@ -232,7 +233,8 @@ Containers::Pair<std::size_t, std::size_t> ArrayTuple::sizeAlignmentFor(const Ar
     for(const Item& item: items) {
         if(item._elementAlignment > maxAlignment)
             maxAlignment = item._elementAlignment;
-        if(item._destructor && item._elementCount) ++destructibleItemCount;
+        if(item._destructor && item._elementCount)
+            ++destructibleItemCount;
     }
 
     /* If all items have trivially destructible types and the array deleter is
@@ -280,35 +282,35 @@ void ArrayTuple::create(const ArrayView<const Item>& items, const Item& arrayDel
 
     /* Store the items */
     auto* nextDestructibleItem = reinterpret_cast<DestructibleItem*>(_data + sizeof(std::size_t));
-    for(std::size_t i = 0; i != items.size(); ++i) {
+    for(const Item& item: items) {
         /** @todo once we're asserting for alignment in Array, assert also here
-            that `_data % items[i]._elementAlignment == 0`. Especially
-            important when custom allocators passing static char[] arrays are
-            involved, like in the tests */
-        offset = alignFor(offset, items[i]._elementAlignment);
+            that `_data % item._elementAlignment == 0`. Especially important
+            when custom allocators passing static char[] arrays are involved,
+            like in the tests */
+        offset = alignFor(offset, item._elementAlignment);
 
-        /* If the item has a default constructor, call it on each element */
-        if(items[i]._constructor)
-            for(std::size_t j = 0; j != items[i]._elementCount; ++j)
-                items[i]._constructor(_data + offset + j*items[i]._elementSize, items[i]._elementSize);
+        /* If the item has a default constructor, call it. It should itself
+           perform construction on each element. */
+        if(item._constructor)
+            item._constructor(_data + offset, item._elementSize, item._elementCount);
 
         /* If the item has a destructor and there's not zero elements, populate
            the DestructibleItem instance */
-        if(items[i]._destructor && items[i]._elementCount) {
+        if(item._destructor && item._elementCount) {
             nextDestructibleItem->data = _data + offset;
-            nextDestructibleItem->elementCount = items[i]._elementCount;
-            nextDestructibleItem->elementSize = items[i]._elementSize;
-            nextDestructibleItem->destructor = items[i]._destructor;
+            nextDestructibleItem->elementCount = item._elementCount;
+            nextDestructibleItem->elementSize = item._elementSize;
+            nextDestructibleItem->destructor = item._destructor;
             ++nextDestructibleItem;
         }
 
         /* Save the data pointer to the output array. The size was already
            saved in the Item constructor */
-        CORRADE_INTERNAL_ASSERT(items[i]._destinationPointer);
-        *items[i]._destinationPointer = _data + offset;
+        CORRADE_INTERNAL_ASSERT(item._destinationPointer);
+        *item._destinationPointer = _data + offset;
 
         /* Increase the offset for next round */
-        offset += items[i]._elementCount*items[i]._elementSize;
+        offset += item._elementCount*item._elementSize;
     }
 
     /* Check that we're consistent with what sizeFor() calculated */
@@ -374,8 +376,8 @@ char* ArrayTuple::release() {
 
 namespace Implementation {
 
-void arrayTupleMemset(void* const data, const std::size_t size) {
-    std::memset(data, 0, size);
+void arrayTupleMemset(void* const data, const std::size_t elementSize, const std::size_t elementCount) {
+    std::memset(data, 0, elementSize*elementCount);
 }
 
 }
@@ -401,10 +403,14 @@ ArrayTuple::Item::Item(Corrade::ValueInitT, const std::size_t size, MutableStrin
         "Containers::ArrayTuple:" << (flags & ~StringViewFlag::NullTerminated) << "not allowed for a string view", );
 
     /* Populate size of the output view. Pointer gets updated inside
-       create(), however here we have to set it to something non-null to not
-       trip on an assert in case the NullTerminated flag is set. */
+       create(), however here we have to set it to something non-null *and*
+       with `data[size] == '\0'` to not trip on an assert in case the
+       NullTerminated flag is set. The very hopeful assumption is that
+       `(zero - size) + size` results in `zero` and so the read in the assert
+       doesn't access some wildly incorrect location even in case the pointer
+       wraps around or some such. */
     char zero[1]{};
-    outputView = {zero, size, flags};
+    outputView = {zero - size, size, flags};
 }
 
 ArrayTuple::Item::Item(Corrade::ValueInitT, const std::size_t size, MutableStringView& outputView): Item{Corrade::ValueInit, size, outputView, {}} {}
@@ -419,9 +425,14 @@ ArrayTuple::Item::Item(const std::size_t size, MutableStringView& outputView): I
 ArrayTuple::Item::Item(Corrade::NoInitT, const std::size_t size, MutableStringView& outputView, const StringViewFlags flags):
     _elementSize{size + (flags & StringViewFlag::NullTerminated ? 1 : 0)}, _elementAlignment{1},
     _elementCount{1},
-    _constructor{flags & StringViewFlag::NullTerminated ? [](void* data, std::size_t size) {
-        static_cast<char*>(data)[size - 1] = '\0';
-    } : static_cast<void(*)(void*, std::size_t)>(nullptr)},
+    _constructor{flags & StringViewFlag::NullTerminated ? [](void* data, std::size_t elementSize, std::size_t elementCount) {
+        #ifdef CORRADE_NO_DEBUG_ASSERT
+        static_cast<void>(elementCount);
+        #else
+        CORRADE_INTERNAL_DEBUG_ASSERT(elementCount == 1);
+        #endif
+        static_cast<char*>(data)[elementSize - 1] = '\0';
+    } : static_cast<void(*)(void*, std::size_t, std::size_t)>(nullptr)},
     _destructor{},
     _destinationPointer{&reinterpret_cast<void*&>(Implementation::dataRef(outputView))}
 {
@@ -429,10 +440,14 @@ ArrayTuple::Item::Item(Corrade::NoInitT, const std::size_t size, MutableStringVi
         "Containers::ArrayTuple:" << (flags & ~StringViewFlag::NullTerminated) << "not allowed for a string view", );
 
     /* Populate size of the output view. Pointer gets updated inside
-       create(), however here we have to set it to something non-null to not
-       trip on an assert in case the NullTerminated flag is set. */
+       create(), however here we have to set it to something non-null *and*
+       with `data[size] == '\0'` to not trip on an assert in case the
+       NullTerminated flag is set. The very hopeful assumption is that
+       `(zero - size) + size` results in `zero` and so the read in the assert
+       doesn't access some wildly incorrect location even in case the pointer
+       wraps around or some such. */
     char zero[1]{};
-    outputView = {zero, size, flags};
+    outputView = {zero - size, size, flags};
 }
 
 ArrayTuple::Item::Item(Corrade::NoInitT, const std::size_t size, MutableStringView& outputView): Item{Corrade::NoInit, size, outputView, {}} {}

@@ -2,7 +2,7 @@
 pkgname=emscripten-corrade
 pkgver=dev.wasm
 pkgrel=1
-pkgdesc="C++11/C++14 multiplatform utility library (Emscripten, wasm)"
+pkgdesc="C++11 multiplatform utility library (Emscripten, wasm)"
 arch=('any')
 url="https://magnum.graphics/corrade/"
 license=('MIT')
@@ -34,6 +34,10 @@ build() {
     cmake .. \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/usr/lib/emscripten/system \
+        `# Make libc++ remove transitive includes, both for faster build` \
+        `# times and to detect if we're missing a transitive include. Works` \
+        `# with libc++ 16+.` \
+        -DCMAKE_CXX_FLAGS="-D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES" \
         -DCMAKE_COLOR_DIAGNOSTICS=ON \
         -DCORRADE_BUILD_TESTS=ON \
         -DCORRADE_TESTSUITE_TEST_TARGET=build-tests

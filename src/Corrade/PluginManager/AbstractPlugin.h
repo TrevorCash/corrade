@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -403,6 +403,7 @@ Produces a list of search paths in this order:
     next to the executable.
 
 You're encouraged to pass @p hardcodedPath and @p relativePath as
+@ref Containers::StringViewFlag::NullTerminated
 @ref Containers::StringViewFlag::Global views (i.e., string view literals) ---
 the values in points 1 and 5 will then be non-owning references to them,
 avoiding copies.

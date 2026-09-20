@@ -19,6 +19,9 @@
     `#define CORRADE_PAIR_STL_COMPATIBILITY` before including the file.
     Including it multiple times with different macros defined works too.
 
+    v2020.06-1890-g77f9f (2025-04-11)
+    -   NoInit construction now works also with mixed trivial and class types
+    -   Cleanup and unification of SFINAE code
     v2020.06-1846-gc4cdf (2025-01-07)
     -   Non-const C++17 structured bindings are now constexpr as well
     -   Structured bindings of const types now work even w/o <utility>
@@ -73,8 +76,12 @@
 /* CORRADE_TARGET_LIBSTDCXX, CORRADE_TARGET_LIBCXX and
    CORRADE_TARGET_DINKUMWARE is needed for the StlForwardTupleSize.h header
    needed by StructuredBindings */
-#if CORRADE_CXX_STANDARD >= 202002
-#include <version>
+#if CORRADE_CXX_STANDARD >= 201703 && defined(__has_include)
+    #if __has_include(<version>)
+    #include <version>
+    #else
+    #include <ciso646>
+    #endif
 #else
 #include <ciso646>
 #endif

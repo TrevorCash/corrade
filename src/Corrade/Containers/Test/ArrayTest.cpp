@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -72,17 +72,19 @@ struct ArrayTest: TestSuite::Tester {
     void resetCounters();
 
     void constructDefault();
-    void constructEmpty();
-    void construct();
-    void constructZeroSize();
+    #ifdef CORRADE_BUILD_DEPRECATED
+    void constructDeprecated();
+    void constructDeprecatedZeroSize();
     void constructDefaultInit();
     void constructDefaultInitZeroSize();
+    #endif
     void constructValueInit();
     void constructValueInitZeroSize();
     void constructNoInitTrivial();
     void constructNoInitTrivialZeroSize();
     void constructNoInitNonTrivial();
     void constructNoInitNonTrivialZeroSize();
+    void constructNoInitNoDefaultConstructor();
     void constructDirectInit();
     void constructDirectInitZeroSize();
     void constructDirectInitMoveOnly();
@@ -96,7 +98,9 @@ struct ArrayTest: TestSuite::Tester {
     void constructZeroNullPointerAmbiguity();
 
     void convertBool();
+    #ifdef CORRADE_BUILD_DEPRECATED
     void convertPointer();
+    #endif
     void convertView();
     void convertViewDerived();
     void convertViewOverload();
@@ -148,17 +152,19 @@ typedef Containers::ArrayView<const void> ConstVoidArrayView;
 
 ArrayTest::ArrayTest() {
     addTests({&ArrayTest::constructDefault,
-              &ArrayTest::constructEmpty,
-              &ArrayTest::construct,
-              &ArrayTest::constructZeroSize,
+              #ifdef CORRADE_BUILD_DEPRECATED
+              &ArrayTest::constructDeprecated,
+              &ArrayTest::constructDeprecatedZeroSize,
               &ArrayTest::constructDefaultInit,
               &ArrayTest::constructDefaultInitZeroSize,
+              #endif
               &ArrayTest::constructValueInit,
               &ArrayTest::constructValueInitZeroSize,
               &ArrayTest::constructNoInitTrivial,
               &ArrayTest::constructNoInitTrivialZeroSize,
               &ArrayTest::constructNoInitNonTrivial,
               &ArrayTest::constructNoInitNonTrivialZeroSize,
+              &ArrayTest::constructNoInitNoDefaultConstructor,
               &ArrayTest::constructDirectInit,
               &ArrayTest::constructDirectInitZeroSize});
 
@@ -178,7 +184,9 @@ ArrayTest::ArrayTest() {
               &ArrayTest::constructZeroNullPointerAmbiguity,
 
               &ArrayTest::convertBool,
+              #ifdef CORRADE_BUILD_DEPRECATED
               &ArrayTest::convertPointer,
+              #endif
               &ArrayTest::convertView,
               &ArrayTest::convertViewDerived,
               &ArrayTest::convertViewOverload,
@@ -261,31 +269,26 @@ void ArrayTest::constructDefault() {
        probably due to the workaround to avoid Array{0} being ambiguous between
        a std::size_t and a nullptr constructor */
     /** @todo drop this once the single-argument size constructor is
-        deprecated in favor of explicit DefaultInit / ValueInit */
+        deprecated in favor of explicit ValueInit / NoInit */
     #if defined(CORRADE_TARGET_GCC) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ < 5
     const Array a2{nullptr};
     #else
     const Array a2 = nullptr;
     #endif
-    CORRADE_VERIFY(a1 == nullptr);
-    CORRADE_VERIFY(a2 == nullptr);
+    CORRADE_COMPARE(a1.data(), nullptr);
+    CORRADE_COMPARE(a2.data(), nullptr);
     CORRADE_VERIFY(a1.isEmpty());
     CORRADE_VERIFY(a2.isEmpty());
     CORRADE_COMPARE(a1.size(), 0);
     CORRADE_COMPARE(a2.size(), 0);
 }
 
-void ArrayTest::constructEmpty() {
-    /* Zero-length should not call new */
-    const std::size_t size = 0;
-    const Array b(size);
-    CORRADE_VERIFY(b == nullptr);
-    CORRADE_COMPARE(b.size(), 0);
-}
-
-void ArrayTest::construct() {
-    const Array a(5);
-    CORRADE_VERIFY(a != nullptr);
+#ifdef CORRADE_BUILD_DEPRECATED
+void ArrayTest::constructDeprecated() {
+    CORRADE_IGNORE_DEPRECATED_PUSH
+    const Array a{5};
+    CORRADE_IGNORE_DEPRECATED_POP
+    CORRADE_VERIFY(a.data() != nullptr);
     CORRADE_VERIFY(!a.isEmpty());
     CORRADE_COMPARE(a.size(), 5);
 
@@ -300,23 +303,29 @@ void ArrayTest::construct() {
     CORRADE_VERIFY(!std::is_convertible<std::size_t, Array>::value);
 }
 
-void ArrayTest::constructZeroSize() {
+void ArrayTest::constructDeprecatedZeroSize() {
+    CORRADE_IGNORE_DEPRECATED_PUSH
     Array a{0};
+    CORRADE_IGNORE_DEPRECATED_POP
     CORRADE_VERIFY(!a.data());
     CORRADE_VERIFY(a.isEmpty());
     CORRADE_COMPARE(a.size(), 0);
 }
+#endif
 
 void ArrayTest::constructFromExisting() {
     int* a = new int[25];
     Array b{a, 25};
-    CORRADE_VERIFY(b == a);
+    CORRADE_COMPARE(b.data(), a);
     CORRADE_VERIFY(!b.isEmpty());
     CORRADE_COMPARE(b.size(), 25);
 }
 
+#ifdef CORRADE_BUILD_DEPRECATED
 void ArrayTest::constructDefaultInit() {
+    CORRADE_IGNORE_DEPRECATED_PUSH
     const Array a{Corrade::DefaultInit, 5};
+    CORRADE_IGNORE_DEPRECATED_POP
     CORRADE_VERIFY(a);
     CORRADE_COMPARE(a.size(), 5);
 
@@ -324,10 +333,13 @@ void ArrayTest::constructDefaultInit() {
 }
 
 void ArrayTest::constructDefaultInitZeroSize() {
+    CORRADE_IGNORE_DEPRECATED_PUSH
     Array a{Corrade::DefaultInit, 0};
+    CORRADE_IGNORE_DEPRECATED_POP
     CORRADE_VERIFY(!a.data());
     CORRADE_COMPARE(a.size(), 0);
 }
+#endif
 
 void ArrayTest::constructValueInit() {
     const Array a{Corrade::ValueInit, 5};
@@ -375,7 +387,9 @@ void ArrayTest::constructNoInitNonTrivial() {
     CORRADE_VERIFY(a.deleter());
     CORRADE_COMPARE(Foo::constructorCallCount, 0);
 
-    const Containers::Array<Foo> b{Corrade::DefaultInit, 7};
+    /* Just to verify that the variable gets updated when calling a regular
+       constructor */
+    const Containers::Array<Foo> b{Corrade::ValueInit, 7};
     CORRADE_COMPARE(Foo::constructorCallCount, 7);
 }
 
@@ -383,6 +397,31 @@ void ArrayTest::constructNoInitNonTrivialZeroSize() {
     Containers::Array<Foo> a{Corrade::NoInit, 0};
     CORRADE_VERIFY(!a.data());
     CORRADE_COMPARE(a.size(), 0);
+}
+
+/* A variant of these is used in StaticArrayTest, PairTest and TripleTest */
+struct NoDefaultConstructor {
+    /* Clang complains this one is unused. Well, yes, it's here to make the
+       struct non-default-constructible. */
+    CORRADE_UNUSED /*implicit*/ NoDefaultConstructor(int a): a{a} {}
+    int a;
+};
+template<class T> struct Wrapped {
+    /* This works only if T is default-constructible */
+    /*implicit*/ Wrapped(): a{} {}
+    T a;
+};
+
+void ArrayTest::constructNoInitNoDefaultConstructor() {
+    /* In libstdc++ before version 8 std::is_trivially_constructible<T> doesn't
+       work with (template) types where the default constructor isn't usable,
+       failing compilation instead of producing std::false_type; in version 4.8
+       this trait isn't available at all. std::is_trivial is used instead,
+       verify that it compiles correctly everywhere. */
+
+    Containers::Array<Wrapped<NoDefaultConstructor>> a{Corrade::NoInit, 4};
+    CORRADE_VERIFY(a.data());
+    CORRADE_COMPARE(a.size(), 4);
 }
 
 void ArrayTest::constructDirectInit() {
@@ -494,25 +533,25 @@ void ArrayTest::constructMove() {
     auto myDeleter = [](int* data, std::size_t) { delete[] data; };
     Array a(new int[5], 5, myDeleter);
     CORRADE_VERIFY(a);
-    const int* const ptr = a;
+    const int* const ptr = a.data();
 
     Array b(Utility::move(a));
-    CORRADE_VERIFY(a == nullptr);
-    CORRADE_VERIFY(b == ptr);
+    CORRADE_COMPARE(a.data(), nullptr);
+    CORRADE_COMPARE(b.data(), ptr);
     CORRADE_COMPARE(a.size(), 0);
     CORRADE_COMPARE(b.size(), 5);
-    CORRADE_VERIFY(a.deleter() == nullptr);
-    CORRADE_VERIFY(b.deleter() == myDeleter);
+    CORRADE_COMPARE(a.deleter(), nullptr);
+    CORRADE_COMPARE(b.deleter(), myDeleter);
 
     auto noDeleter = [](int*, std::size_t) {};
     Array c{reinterpret_cast<int*>(0x3), 3, noDeleter};
     c = Utility::move(b);
-    CORRADE_VERIFY(b == reinterpret_cast<int*>(0x3));
-    CORRADE_VERIFY(c == ptr);
+    CORRADE_COMPARE(b.data(), reinterpret_cast<int*>(0x3));
+    CORRADE_COMPARE(c.data(), ptr);
     CORRADE_COMPARE(b.size(), 3);
     CORRADE_COMPARE(c.size(), 5);
-    CORRADE_VERIFY(b.deleter() == noDeleter);
-    CORRADE_VERIFY(c.deleter() == myDeleter);
+    CORRADE_COMPARE(b.deleter(), noDeleter);
+    CORRADE_COMPARE(c.deleter(), myDeleter);
 
     CORRADE_VERIFY(std::is_nothrow_move_constructible<Array>::value);
     CORRADE_VERIFY(std::is_nothrow_move_assignable<Array>::value);
@@ -557,26 +596,33 @@ void ArrayTest::constructZeroNullPointerAmbiguity() {
 }
 
 void ArrayTest::convertBool() {
-    CORRADE_VERIFY(Array(2));
-    CORRADE_VERIFY(!Array());
+    CORRADE_VERIFY((Array{Corrade::ValueInit, 2}));
+    CORRADE_VERIFY(!Array{});
 
     /* Explicit conversion to bool is allowed, but not to int */
     CORRADE_VERIFY(std::is_constructible<bool, Array>::value);
     CORRADE_VERIFY(!std::is_constructible<int, Array>::value);
 }
 
+#ifdef CORRADE_BUILD_DEPRECATED
 void ArrayTest::convertPointer() {
-    Array a(2);
+    Array a{Corrade::ValueInit, 2};
+    CORRADE_IGNORE_DEPRECATED_PUSH
     int* b = a;
+    CORRADE_IGNORE_DEPRECATED_POP
     CORRADE_COMPARE(b, a.begin());
 
-    const Array c(3);
+    const Array c{Corrade::ValueInit, 3};
+    CORRADE_IGNORE_DEPRECATED_PUSH
     const int* d = c;
+    CORRADE_IGNORE_DEPRECATED_POP
     CORRADE_COMPARE(d, c.begin());
 
     /* Pointer arithmetic */
-    const Array e(3);
+    const Array e{Corrade::ValueInit, 3};
+    CORRADE_IGNORE_DEPRECATED_PUSH
     const int* f = e + 2;
+    CORRADE_IGNORE_DEPRECATED_POP
     CORRADE_COMPARE(f, &e[2]);
 
     /* Verify that we can't convert rvalues. Not using is_convertible to catch
@@ -597,10 +643,11 @@ void ArrayTest::convertPointer() {
         CORRADE_VERIFY(!std::is_constructible<const int*, const Array&&>::value);
     }
 }
+#endif
 
 void ArrayTest::convertView() {
-    Array a(5);
-    const Array ca(5);
+    Array a{Corrade::ValueInit, 5};
+    const Array ca{Corrade::ValueInit, 5};
     Containers::Array<const int> ac{a.data(), a.size(), [](const int*, std::size_t){}};
     const Containers::Array<const int> cac{a.data(), a.size(), [](const int*, std::size_t){}};
 
@@ -609,16 +656,16 @@ void ArrayTest::convertView() {
         const ConstArrayView cb = ca;
         const ConstArrayView bc = ac;
         const ConstArrayView cbc = cac;
-        CORRADE_VERIFY(b.begin() == a.begin());
-        CORRADE_VERIFY(bc.begin() == ac.begin());
-        CORRADE_VERIFY(cb.begin() == ca.begin());
-        CORRADE_VERIFY(cbc.begin() == cac.begin());
+        CORRADE_COMPARE(b.begin(), a.begin());
+        CORRADE_COMPARE(bc.begin(), ac.begin());
+        CORRADE_COMPARE(cb.begin(), ca.begin());
+        CORRADE_COMPARE(cbc.begin(), cac.begin());
         CORRADE_COMPARE(b.size(), 5);
         CORRADE_COMPARE(cb.size(), 5);
         CORRADE_COMPARE(bc.size(), 5);
         CORRADE_COMPARE(cbc.size(), 5);
 
-        ArrayView c = Array{3};
+        ArrayView c = Array{Corrade::ValueInit, 3};
         CORRADE_COMPARE(c.size(), 3);
         /* The rest is a dangling pointer, can't test */
     } {
@@ -630,16 +677,16 @@ void ArrayTest::convertView() {
         CORRADE_VERIFY(std::is_same<decltype(cb), const ConstArrayView>::value);
         CORRADE_VERIFY(std::is_same<decltype(bc), const ConstArrayView>::value);
         CORRADE_VERIFY(std::is_same<decltype(cbc), const ConstArrayView>::value);
-        CORRADE_VERIFY(b.begin() == a.begin());
-        CORRADE_VERIFY(bc.begin() == ac.begin());
-        CORRADE_VERIFY(cb.begin() == ca.begin());
-        CORRADE_VERIFY(cbc.begin() == cac.begin());
+        CORRADE_COMPARE(b.begin(), a.begin());
+        CORRADE_COMPARE(bc.begin(), ac.begin());
+        CORRADE_COMPARE(cb.begin(), ca.begin());
+        CORRADE_COMPARE(cbc.begin(), cac.begin());
         CORRADE_COMPARE(b.size(), 5);
         CORRADE_COMPARE(cb.size(), 5);
         CORRADE_COMPARE(bc.size(), 5);
         CORRADE_COMPARE(cbc.size(), 5);
 
-        auto c = arrayView(Array{3});
+        auto c = arrayView(Array{Corrade::ValueInit, 3});
         CORRADE_VERIFY(std::is_same<decltype(c), ArrayView>::value);
         CORRADE_COMPARE(c.size(), 3);
         /* The rest is a dangling pointer, can't test */
@@ -653,10 +700,10 @@ void ArrayTest::convertViewDerived() {
        from Containers::ArrayView<Color3> because the data have the same size
        and data layout */
 
-    Containers::Array<B> b{5};
+    Containers::Array<B> b{Corrade::ValueInit, 5};
     Containers::ArrayView<A> a = b;
 
-    CORRADE_VERIFY(a == b);
+    CORRADE_COMPARE(a.data(), b.data());
     CORRADE_COMPARE(a.size(), 5);
 }
 
@@ -666,8 +713,8 @@ CORRADE_UNUSED bool takesAView(Containers::ArrayView<float>) { return false; }
 CORRADE_UNUSED bool takesAConstView(Containers::ArrayView<const float>) { return false; }
 
 void ArrayTest::convertViewOverload() {
-    Array a(5);
-    const Array ca(5);
+    Array a{Corrade::ValueInit, 5};
+    const Array ca{Corrade::ValueInit, 5};
 
     /* It should pick the correct one and not fail, assert or be ambiguous */
     CORRADE_VERIFY(takesAView(a));
@@ -676,19 +723,19 @@ void ArrayTest::convertViewOverload() {
 }
 
 void ArrayTest::convertVoid() {
-    Array a(6);
+    Array a{Corrade::ValueInit, 6};
     VoidArrayView b = a;
-    CORRADE_VERIFY(b == a);
+    CORRADE_COMPARE(b.data(), a.data());
     CORRADE_COMPARE(b.size(), a.size()*sizeof(int));
 }
 
 void ArrayTest::convertConstVoid() {
-    Array a(6);
-    const Array ca(6);
+    Array a{Corrade::ValueInit, 6};
+    const Array ca{Corrade::ValueInit, 6};
     ConstVoidArrayView b = a;
     ConstVoidArrayView cb = ca;
-    CORRADE_VERIFY(b == a);
-    CORRADE_VERIFY(cb == ca);
+    CORRADE_COMPARE(b.data(), a.data());
+    CORRADE_COMPARE(cb.data(), ca.data());
     CORRADE_COMPARE(b.size(), a.size()*sizeof(int));
     CORRADE_COMPARE(cb.size(), ca.size()*sizeof(int));
 }
@@ -697,11 +744,11 @@ void ArrayTest::convertToExternalView() {
     Array a{Corrade::InPlaceInit, {1, 2, 3, 4, 5}};
 
     IntView b = a;
-    CORRADE_COMPARE(b.data, a);
+    CORRADE_COMPARE(b.data, a.data());
     CORRADE_COMPARE(b.size, a.size());
 
     ConstIntView cb = a;
-    CORRADE_COMPARE(cb.data, a);
+    CORRADE_COMPARE(cb.data, a.data());
     CORRADE_COMPARE(cb.size, a.size());
 
     /* Conversion to a different type is not allowed. Not using is_convertible
@@ -716,7 +763,7 @@ void ArrayTest::convertToConstExternalView() {
     const Array a{Corrade::InPlaceInit, {1, 2, 3, 4, 5}};
 
     ConstIntView b = a;
-    CORRADE_COMPARE(b.data, a);
+    CORRADE_COMPARE(b.data, a.data());
     CORRADE_COMPARE(b.size, a.size());
 
     /* Conversion to a different type is not allowed. Not using is_convertible
@@ -728,7 +775,7 @@ void ArrayTest::convertToConstExternalView() {
 void ArrayTest::access() {
     Array a{Corrade::InPlaceInit, {1, 2, 3, 4, 5}};
 
-    CORRADE_COMPARE(a.data(), static_cast<int*>(a));
+    CORRADE_COMPARE(*a.data(), 1);
     CORRADE_COMPARE(a.front(), 1);
     CORRADE_COMPARE(a.back(), 5);
     CORRADE_COMPARE(*(a.begin() + 2), 3);
@@ -753,7 +800,7 @@ void ArrayTest::access() {
 void ArrayTest::accessConst() {
     const Array a{Corrade::InPlaceInit, {1, 2, 3, 4, 5}};
 
-    CORRADE_COMPARE(a.data(), static_cast<const int*>(a));
+    CORRADE_COMPARE(*a.data(), 1);
     CORRADE_COMPARE(a.front(), 1);
     CORRADE_COMPARE(a.back(), 5);
     CORRADE_COMPARE(*(a.begin() + 2), 3);
@@ -770,7 +817,7 @@ void ArrayTest::accessInvalid() {
     Error redirectError{&out};
 
     Array a;
-    Array b{5};
+    Array b{Corrade::ValueInit, 5};
     a.front();
     a.back();
     b[5];
@@ -785,7 +832,7 @@ void ArrayTest::rvalueArrayAccess() {
 }
 
 void ArrayTest::rangeBasedFor() {
-    Array a(5);
+    Array a{Corrade::ValueInit, 5};
     for(auto& i: a)
         i = 3;
 
@@ -870,49 +917,49 @@ void ArrayTest::slicePointer() {
     Array a{Corrade::InPlaceInit, {1, 2, 3, 4, 5}};
     const Array ac{Corrade::InPlaceInit, {1, 2, 3, 4, 5}};
 
-    ArrayView b1 = a.slice(a + 1, a + 4);
+    ArrayView b1 = a.slice(a.data() + 1, a.data() + 4);
     CORRADE_COMPARE(b1.size(), 3);
     CORRADE_COMPARE(b1[0], 2);
     CORRADE_COMPARE(b1[1], 3);
     CORRADE_COMPARE(b1[2], 4);
 
-    ConstArrayView bc1 = ac.slice(ac + 1, ac + 4);
+    ConstArrayView bc1 = ac.slice(ac.data() + 1, ac.data() + 4);
     CORRADE_COMPARE(bc1.size(), 3);
     CORRADE_COMPARE(bc1[0], 2);
     CORRADE_COMPARE(bc1[1], 3);
     CORRADE_COMPARE(bc1[2], 4);
 
-    ArrayView b2 = a.sliceSize(a + 1, 3);
+    ArrayView b2 = a.sliceSize(a.data() + 1, 3);
     CORRADE_COMPARE(b2.size(), 3);
     CORRADE_COMPARE(b2[0], 2);
     CORRADE_COMPARE(b2[1], 3);
     CORRADE_COMPARE(b2[2], 4);
 
-    ConstArrayView bc2 = ac.sliceSize(ac + 1, 3);
+    ConstArrayView bc2 = ac.sliceSize(ac.data() + 1, 3);
     CORRADE_COMPARE(bc2.size(), 3);
     CORRADE_COMPARE(bc2[0], 2);
     CORRADE_COMPARE(bc2[1], 3);
     CORRADE_COMPARE(bc2[2], 4);
 
-    ArrayView c = a.prefix(a + 3);
+    ArrayView c = a.prefix(a.data() + 3);
     CORRADE_COMPARE(c.size(), 3);
     CORRADE_COMPARE(c[0], 1);
     CORRADE_COMPARE(c[1], 2);
     CORRADE_COMPARE(c[2], 3);
 
-    ConstArrayView cc = ac.prefix(ac + 3);
+    ConstArrayView cc = ac.prefix(ac.data() + 3);
     CORRADE_COMPARE(cc.size(), 3);
     CORRADE_COMPARE(cc[0], 1);
     CORRADE_COMPARE(cc[1], 2);
     CORRADE_COMPARE(cc[2], 3);
 
-    ArrayView d = a.suffix(a + 2);
+    ArrayView d = a.suffix(a.data() + 2);
     CORRADE_COMPARE(d.size(), 3);
     CORRADE_COMPARE(d[0], 3);
     CORRADE_COMPARE(d[1], 4);
     CORRADE_COMPARE(d[2], 5);
 
-    ConstArrayView dc = ac.suffix(ac + 2);
+    ConstArrayView dc = ac.suffix(ac.data() + 2);
     CORRADE_COMPARE(dc.size(), 3);
     CORRADE_COMPARE(dc[0], 3);
     CORRADE_COMPARE(dc[1], 4);
@@ -978,12 +1025,12 @@ void ArrayTest::sliceToStaticPointer() {
     Array a{Corrade::InPlaceInit, {1, 2, 3, 4, 5}};
     const Array ac{Corrade::InPlaceInit, {1, 2, 3, 4, 5}};
 
-    StaticArrayView<3, int> b = a.slice<3>(a + 1);
+    StaticArrayView<3, int> b = a.slice<3>(a.data() + 1);
     CORRADE_COMPARE(b[0], 2);
     CORRADE_COMPARE(b[1], 3);
     CORRADE_COMPARE(b[2], 4);
 
-    StaticArrayView<3, const int> bc = ac.slice<3>(ac + 1);
+    StaticArrayView<3, const int> bc = ac.slice<3>(ac.data() + 1);
     CORRADE_COMPARE(bc[0], 2);
     CORRADE_COMPARE(bc[1], 3);
     CORRADE_COMPARE(bc[2], 4);
@@ -1033,7 +1080,7 @@ void ArrayTest::sliceZeroNullPointerAmbiguity() {
 void ArrayTest::release() {
     auto myDeleter = [](int* data, std::size_t) { delete[] data; };
     Array a(new int[5], 5, myDeleter);
-    int* const data = a;
+    int* const data = a.data();
     int* const released = a.release();
     delete[] released;
 
@@ -1057,12 +1104,12 @@ void ArrayTest::release() {
     #endif
     CORRADE_COMPARE(a.begin(), nullptr);
     CORRADE_COMPARE(a.size(), 0);
-    CORRADE_VERIFY(a.deleter() == nullptr);
+    CORRADE_COMPARE(a.deleter(), nullptr);
 }
 
 void ArrayTest::defaultDeleter() {
-    Array a{5};
-    CORRADE_VERIFY(a.deleter() == nullptr);
+    Array a{Corrade::ValueInit, 5};
+    CORRADE_COMPARE(a.deleter(), nullptr);
 }
 
 int CustomDeleterCallCount = 0;
@@ -1079,7 +1126,7 @@ void ArrayTest::customDeleter() {
             CORRADE_COMPARE(size, 25);
             ++CustomDeleterCallCount;
         }};
-        CORRADE_VERIFY(a == data);
+        CORRADE_COMPARE(a.data(), &data[0]);
         CORRADE_COMPARE(a.size(), 25);
         CORRADE_COMPARE(CustomDeleterCallCount, 0);
     }
@@ -1099,7 +1146,7 @@ void ArrayTest::customDeleterArrayView() {
             CORRADE_COMPARE(size, 25);
             ++CustomDeleterCallCount;
         }};
-        CORRADE_VERIFY(a == data);
+        CORRADE_COMPARE(a.data(), &data[0]);
         CORRADE_COMPARE(a.size(), 25);
         CORRADE_COMPARE(CustomDeleterCallCount, 0);
     }
@@ -1117,7 +1164,7 @@ void ArrayTest::customDeleterNullData() {
             CORRADE_COMPARE(size, 25);
             ++CustomDeleterCallCount;
         }};
-        CORRADE_VERIFY(a == nullptr);
+        CORRADE_COMPARE(a.data(), nullptr);
         CORRADE_COMPARE(a.size(), 25);
         CORRADE_COMPARE(CustomDeleterCallCount, 0);
     }
@@ -1141,7 +1188,7 @@ void ArrayTest::customDeleterZeroSize() {
             CORRADE_COMPARE(size, 0);
             ++CustomDeleterCallCount;
         }};
-        CORRADE_VERIFY(a == data);
+        CORRADE_COMPARE(a.data(), &data[0]);
         CORRADE_COMPARE(a.size(), 0);
         CORRADE_COMPARE(CustomDeleterCallCount, 0);
     }
@@ -1189,7 +1236,7 @@ void ArrayTest::customDeleterType() {
 
     {
         Containers::Array<int, CustomDeleter> a{data, 25, CustomDeleter{deletedCount}};
-        CORRADE_VERIFY(a == data);
+        CORRADE_COMPARE(a.data(), &data[0]);
         CORRADE_COMPARE(a.size(), 25);
         CORRADE_COMPARE(deletedCount, 0);
     }
@@ -1241,7 +1288,7 @@ void ArrayTest::customDeleterTypeNullData() {
 
     {
         Containers::Array<int, CustomDeleter> a{nullptr, 25, CustomDeleter{deletedCount}};
-        CORRADE_VERIFY(a == nullptr);
+        CORRADE_COMPARE(a.data(), nullptr);
         CORRADE_COMPARE(a.size(), 25);
         CORRADE_COMPARE(deletedCount, 0);
     }
@@ -1269,7 +1316,7 @@ void ArrayTest::customDeleterTypeZeroSize() {
 
     {
         Containers::Array<int, CustomDeleter> a{data, 0, CustomDeleter{deletedCount}};
-        CORRADE_VERIFY(a == data);
+        CORRADE_COMPARE(a.data(), &data[0]);
         CORRADE_COMPARE(a.size(), 0);
         CORRADE_COMPARE(deletedCount, 0);
     }
@@ -1289,7 +1336,8 @@ void ArrayTest::customDeleterTypeMovedOutInstance() {
         CustomDeleter(): deletedCount{} {}
         CustomDeleter(int& deletedCountOutput): deletedCount{&deletedCountOutput} {}
         void operator()(int*, std::size_t) {
-            if(deletedCount) ++*deletedCount;
+            if(deletedCount)
+                ++*deletedCount;
             ++CustomDeleterCallCount;
         }
         int* deletedCount;
@@ -1313,8 +1361,8 @@ void ArrayTest::customDeleterTypeMovedOutInstance() {
 }
 
 void ArrayTest::cast() {
-    Containers::Array<std::uint32_t> a{6};
-    const Containers::Array<std::uint32_t> ca{6};
+    Containers::Array<std::uint32_t> a{Corrade::ValueInit, 6};
+    const Containers::Array<std::uint32_t> ca{Corrade::ValueInit, 6};
     Containers::Array<const std::uint32_t> ac{a.data(), a.size(), [](const std::uint32_t*, std::size_t){}};
     const Containers::Array<const std::uint32_t> cac{a.data(), a.size(), [](const std::uint32_t*, std::size_t){}};
 
@@ -1365,7 +1413,7 @@ void ArrayTest::cast() {
 }
 
 void ArrayTest::size() {
-    Array a{3};
+    Array a{Corrade::ValueInit, 3};
 
     CORRADE_COMPARE(Containers::arraySize(a), 3);
 }

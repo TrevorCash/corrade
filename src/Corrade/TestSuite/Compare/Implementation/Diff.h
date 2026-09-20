@@ -4,7 +4,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -70,11 +70,12 @@ template<class T> Containers::Triple<std::size_t, std::size_t, std::size_t> long
     for(std::size_t i = 0; i != a.size(); ++i) {
         /* Start with no active runs */
         /** @todo Utility::fill(), finally */
-        std::memset(newRuns, 0, newRuns.size()*sizeof(std::size_t));
+        std::memset(newRuns.data(), 0, newRuns.size()*sizeof(std::size_t));
 
         /* Go through all elements of B */
         for(std::size_t j = 0; j != b.size(); ++j) {
-            if(a[i] != b[j]) continue;
+            if(a[i] != b[j])
+                continue;
 
             /* If elements match, extend the previous line with them */
             const std::size_t runSize = newRuns[j] = (j ? runs[j - 1] : 0) + 1;

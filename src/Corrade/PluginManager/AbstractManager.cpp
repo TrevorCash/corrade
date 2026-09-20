@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -178,7 +178,13 @@ Implementation::StaticPlugin*& windowsGlobalStaticPlugins() {
 #define globalStaticPlugins windowsGlobalStaticPlugins()
 #endif
 
-static_assert(std::is_standard_layout<Implementation::StaticPlugin>::value && std::is_trivial<Implementation::StaticPlugin>::value,
+static_assert(std::is_standard_layout<Implementation::StaticPlugin>::value &&
+    #ifdef CORRADE_NO_STD_IS_TRIVIALLY_TRAITS
+    std::has_trivial_default_constructor<Implementation::StaticPlugin>::value
+    #else
+    std::is_trivially_constructible<Implementation::StaticPlugin>::value
+    #endif
+,
     "static plugins shouldn't cause any global initialization / finalization to happen on their own");
 
 void AbstractManager::importStaticPlugin(int version, Implementation::StaticPlugin& plugin) {
@@ -220,7 +226,8 @@ AbstractManager::AbstractManager(const Containers::StringView pluginInterface, c
        manager assigned to them (i.e, aren't in the map yet). */
     for(const Implementation::StaticPlugin* staticPlugin = globalStaticPlugins; staticPlugin; staticPlugin = Containers::Implementation::forwardListNext(*staticPlugin)) {
         /* The plugin doesn't belong to this manager, skip it */
-        if(staticPlugin->interface != _state->pluginInterface) continue;
+        if(staticPlugin->interface != _state->pluginInterface)
+            continue;
 
         /* Assign the plugin to this manager, parse its metadata and
            initialize it (unless the plugin is metadata-less) */
@@ -259,7 +266,8 @@ AbstractManager::AbstractManager(const Containers::StringView pluginInterface, c
                to find it, prevent that from happening by wrapping it again */
             /** @todo clean this up once we kill std::map */
             const auto alias = _state->aliases.find(Containers::String::nullTerminatedView(staticPlugin->plugin));
-            if(alias != _state->aliases.end()) _state->aliases.erase(alias);
+            if(alias != _state->aliases.end())
+                _state->aliases.erase(alias);
             /* And here as well -- wrap the string to avoid a copy */
             /* Libc++ frees the passed Plugin& reference when using
                emplace(), causing double-free memory corruption later.
@@ -281,7 +289,8 @@ AbstractManager::AbstractManager(const Containers::StringView pluginInterface, c
 
     #ifndef CORRADE_PLUGINMANAGER_NO_DYNAMIC_PLUGIN_SUPPORT
     /* If plugin directory is set, use it, otherwise loop through */
-    if(pluginDirectory) setPluginDirectory(pluginDirectory);
+    if(pluginDirectory)
+        setPluginDirectory(pluginDirectory);
     else {
         CORRADE_ASSERT(!pluginSearchPaths.isEmpty(),
             "PluginManager::Manager: either pluginDirectory has to be set or T::pluginSearchPaths() is expected to have at least one entry", );
@@ -291,7 +300,8 @@ AbstractManager::AbstractManager(const Containers::StringView pluginInterface, c
         const Containers::StringView executableDir = Utility::Path::path(*executableLocation);
         for(const Containers::StringView path: pluginSearchPaths) {
             const Containers::String fullPath = Utility::Path::join(executableDir, path);
-            if(!Utility::Path::exists(fullPath)) continue;
+            if(!Utility::Path::exists(fullPath))
+                continue;
 
             setPluginDirectory(fullPath);
             break;
@@ -414,7 +424,8 @@ void AbstractManager::setPluginDirectory(const Containers::StringView directory)
             const Containers::StringView name = filename.exceptSuffix(_state->pluginSuffix);
 
             /* Skip the plugin if it is among loaded */
-            if(_state->plugins.find(name) != _state->plugins.end()) continue;
+            if(_state->plugins.find(name) != _state->plugins.end())
+                continue;
 
             registerDynamicPlugin(name, Containers::Pointer<Implementation::Plugin>{InPlaceInit, name,
                 _state->pluginMetadataSuffix ? Utility::Path::join(_state->pluginDirectory, name + _state->pluginMetadataSuffix) : Containers::String{}});
@@ -492,7 +503,8 @@ const PluginMetadata* AbstractManager::metadata(const Containers::StringView plu
        find it, prevent that from happening by wrapping a view */
     /** @todo clean this up once we kill std::map */
     auto found = _state->aliases.find(Containers::String::nullTerminatedView(plugin));
-    if(found != _state->aliases.end()) return &found->second;
+    if(found != _state->aliases.end())
+        return &found->second;
 
     return nullptr;
 }
@@ -502,7 +514,8 @@ PluginMetadata* AbstractManager::metadata(const Containers::StringView plugin) {
        find it, prevent that from happening by wrapping a view */
     /** @todo clean this up once we kill std::map */
     auto found = _state->aliases.find(Containers::String::nullTerminatedView(plugin));
-    if(found != _state->aliases.end()) return &found->second;
+    if(found != _state->aliases.end())
+        return &found->second;
 
     return nullptr;
 }
@@ -512,7 +525,8 @@ LoadState AbstractManager::loadState(const Containers::StringView plugin) const 
        find it, prevent that from happening by wrapping a view */
     /** @todo clean this up once we kill std::map */
     auto found = _state->aliases.find(Containers::String::nullTerminatedView(plugin));
-    if(found != _state->aliases.end()) return found->second.loadState;
+    if(found != _state->aliases.end())
+        return found->second.loadState;
 
     return LoadState::NotFound;
 }
@@ -643,7 +657,7 @@ LoadState AbstractManager::loadInternal(Implementation::Plugin& plugin, Containe
     #ifndef CORRADE_TARGET_WINDOWS
     void* module = dlopen(Containers::String::nullTerminatedView(filename).data(), RTLD_NOW|RTLD_GLOBAL);
     #else
-    HMODULE module = LoadLibraryW(Utility::Unicode::widen(filename));
+    HMODULE module = LoadLibraryW(Utility::Unicode::widen(filename).data());
     #endif
     if(!module) {
         Utility::Error err;
@@ -659,16 +673,25 @@ LoadState AbstractManager::loadInternal(Implementation::Plugin& plugin, Containe
     }
 
     /* Check plugin version */
-    /* MinGW GCC 8+ warns that "cast between incompatible function types from
-       ‘FARPROC’ to ‘int (*)()’", the __extension__ doesn't help. OTOH, on
-       Linux without the __extension__ it causes a -Wpedantic warning on GCC
-       4.8 (and perhaps newer), so we need both. */
-    #if defined(CORRADE_TARGET_MINGW) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 8
+    /* GCC 8 adds -Wcast-function-type, enabled by default with -Wextra, which
+       causes this line to emit a warning on MinGW. We know what we're doing,
+       so suppress that. Clang implements it since version 13, and it's a part
+       of -Wextra since 19.1, thus warning when clang-cl 19.1+ is used:
+        https://github.com/llvm/llvm-project/commit/217f0f735afec57a51fa6f9ab863d4713a2f85e2
+        https://github.com/llvm/llvm-project/commit/1de7e6c8cba27296f3fc16d107822ea0ee856759
+       OTOH, on Linux without the __extension__ it causes a -Wpedantic warning
+       on GCC 4.8 (and perhaps newer), so we need both.
+
+       For GCC explicitly check we're not on Clang because certain Clang-based
+       IDEs inherit __GNUC__ if GCC is used instead of leaving it at 4 like
+       Clang itself does, which could lead to the pragma being used on Clang 12
+       and older, causing unknown pragma warning. */
+    #if (defined(CORRADE_TARGET_GCC) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 8) || (defined(CORRADE_TARGET_CLANG) && __clang_major__ >= 13)
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wcast-function-type"
     #endif
     #ifdef CORRADE_TARGET_GCC
-    __extension__ /* http://web.archive.org/web/20160826013457/http://www.mr-edd.co.uk/blog/supressing_gcc_warnings */
+    __extension__ /* https://web.archive.org/web/20160826013457/http://www.mr-edd.co.uk/blog/supressing_gcc_warnings */
     #endif
     int (*version)() = reinterpret_cast<int(*)()>(
         #ifndef CORRADE_TARGET_WINDOWS
@@ -677,7 +700,7 @@ LoadState AbstractManager::loadInternal(Implementation::Plugin& plugin, Containe
         GetProcAddress
         #endif
         (module, "pluginVersion"));
-    #if defined(CORRADE_TARGET_MINGW) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 8
+    #if (defined(CORRADE_TARGET_GCC) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 8) || (defined(CORRADE_TARGET_CLANG) && __clang_major__ >= 13)
     #pragma GCC diagnostic pop
     #endif
     if(version == nullptr) {
@@ -709,7 +732,7 @@ LoadState AbstractManager::loadInternal(Implementation::Plugin& plugin, Containe
     }
 
     /* Check interface string */
-    #if defined(CORRADE_TARGET_MINGW) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 8
+    #if (defined(CORRADE_TARGET_GCC) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 8) || (defined(CORRADE_TARGET_CLANG) && __clang_major__ >= 13)
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wcast-function-type" /* see above */
     #endif
@@ -723,7 +746,7 @@ LoadState AbstractManager::loadInternal(Implementation::Plugin& plugin, Containe
         GetProcAddress
         #endif
         (module, "pluginInterface"));
-    #if defined(CORRADE_TARGET_MINGW) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 8
+    #if (defined(CORRADE_TARGET_GCC) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 8) || (defined(CORRADE_TARGET_CLANG) && __clang_major__ >= 13)
     #pragma GCC diagnostic pop
     #endif
     if(interface == nullptr) {
@@ -753,7 +776,7 @@ LoadState AbstractManager::loadInternal(Implementation::Plugin& plugin, Containe
     }
 
     /* Load plugin initializer */
-    #if defined(CORRADE_TARGET_MINGW) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 8
+    #if (defined(CORRADE_TARGET_GCC) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 8) || (defined(CORRADE_TARGET_CLANG) && __clang_major__ >= 13)
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wcast-function-type" /* see above */
     #endif
@@ -767,7 +790,7 @@ LoadState AbstractManager::loadInternal(Implementation::Plugin& plugin, Containe
         GetProcAddress
         #endif
         (module, "pluginInitializer"));
-    #if defined(CORRADE_TARGET_MINGW) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 8
+    #if (defined(CORRADE_TARGET_GCC) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 8) || (defined(CORRADE_TARGET_CLANG) && __clang_major__ >= 13)
     #pragma GCC diagnostic pop
     #endif
     if(initializer == nullptr) {
@@ -788,7 +811,7 @@ LoadState AbstractManager::loadInternal(Implementation::Plugin& plugin, Containe
     }
 
     /* Load plugin finalizer */
-    #if defined(CORRADE_TARGET_MINGW) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 8
+    #if (defined(CORRADE_TARGET_GCC) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 8) || (defined(CORRADE_TARGET_CLANG) && __clang_major__ >= 13)
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wcast-function-type" /* see above */
     #endif
@@ -802,7 +825,7 @@ LoadState AbstractManager::loadInternal(Implementation::Plugin& plugin, Containe
         GetProcAddress
         #endif
         (module, "pluginFinalizer"));
-    #if defined(CORRADE_TARGET_MINGW) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 8
+    #if (defined(CORRADE_TARGET_GCC) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 8) || (defined(CORRADE_TARGET_CLANG) && __clang_major__ >= 13)
     #pragma GCC diagnostic pop
     #endif
     if(finalizer == nullptr) {
@@ -823,7 +846,7 @@ LoadState AbstractManager::loadInternal(Implementation::Plugin& plugin, Containe
     }
 
     /* Load plugin instancer */
-    #if defined(CORRADE_TARGET_MINGW) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 8
+    #if (defined(CORRADE_TARGET_GCC) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 8) || (defined(CORRADE_TARGET_CLANG) && __clang_major__ >= 13)
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wcast-function-type" /* see above */
     #endif
@@ -837,7 +860,7 @@ LoadState AbstractManager::loadInternal(Implementation::Plugin& plugin, Containe
         GetProcAddress
         #endif
         (module, "pluginInstancer"));
-    #if defined(CORRADE_TARGET_MINGW) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 8
+    #if (defined(CORRADE_TARGET_GCC) && !defined(CORRADE_TARGET_CLANG) && __GNUC__ >= 8) || (defined(CORRADE_TARGET_CLANG) && __clang_major__ >= 13)
     #pragma GCC diagnostic pop
     #endif
     if(instancer == nullptr) {
@@ -1005,7 +1028,8 @@ void AbstractManager::registerDynamicPlugin(const Containers::StringView name, C
            prevent anything with String::nullTerminatedView() */
         /** @todo clean this up once we kill std::map */
         const auto alias = _state->aliases.find(name);
-        if(alias != _state->aliases.end()) _state->aliases.erase(alias);
+        if(alias != _state->aliases.end())
+            _state->aliases.erase(alias);
         CORRADE_INTERNAL_ASSERT_OUTPUT(_state->aliases.insert({name, *result.first->second}).second);
     }
 
@@ -1051,7 +1075,8 @@ void AbstractManager::reregisterInstance(const Containers::StringView plugin, Ab
 
     /* If the plugin is being moved, replace the instance pointer. Otherwise
        remove it from the list, and if the list is empty, delete it fully. */
-    if(newInstance) *pos = newInstance;
+    if(newInstance)
+        *pos = newInstance;
     else found->second->instances.erase(pos);
 }
 
@@ -1068,7 +1093,8 @@ Containers::Pointer<AbstractPlugin> AbstractManager::instantiateInternal(const C
 }
 
 Containers::Pointer<AbstractPlugin> AbstractManager::loadAndInstantiateInternal(const Containers::StringView plugin) {
-    if(!(load(plugin) & LoadState::Loaded)) return nullptr;
+    if(!(load(plugin) & LoadState::Loaded))
+        return nullptr;
 
     #ifndef CORRADE_PLUGINMANAGER_NO_DYNAMIC_PLUGIN_SUPPORT
     /* If file path passed, instantiate extracted name instead */
@@ -1089,7 +1115,8 @@ AbstractManager* AbstractManager::externalManagerInternal(const Containers::Stri
     CORRADE_ASSERT(pluginInterface,
         "PluginManager::Manager::externalManager(): can only retrieve managers with a non-empty plugin interface", {});
     for(AbstractManager* manager: _state->externalManagers)
-        if(manager->pluginInterface() == pluginInterface) return manager;
+        if(manager->pluginInterface() == pluginInterface)
+            return manager;
     return nullptr;
 }
 

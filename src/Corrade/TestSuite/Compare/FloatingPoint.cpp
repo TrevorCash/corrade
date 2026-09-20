@@ -2,7 +2,7 @@
     This file is part of Corrade.
 
     Copyright © 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
-                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025
+                2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
               Vladimír Vondruš <mosra@centrum.cz>
 
     Permission is hereby granted, free of charge, to any person obtaining a
@@ -32,7 +32,7 @@
 
 namespace Corrade { namespace TestSuite { namespace Implementation {
 
-/* Adapted from http://floating-point-gui.de/errors/comparison/ */
+/* Adapted from https://floating-point-gui.de/errors/comparison/ */
 template<class T> ComparisonStatusFlags FloatComparator<T>::operator()(T actual, T expected) {
     /* Shortcut for binary equality, infinites and NaN */
     if(actual == expected || (actual != actual && expected != expected))
